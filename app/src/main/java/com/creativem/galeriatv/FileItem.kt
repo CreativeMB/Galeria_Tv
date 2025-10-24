@@ -1,11 +1,10 @@
 package com.creativem.galeriatv
 
-import android.net.Uri
+import java.io.File
 
 data class FileItem(
-    val uri: Uri,
+    val file: File,
     val name: String,
     val isFolder: Boolean,
-    val thumbnailUri: Uri? = null
+    val thumbnailFile: File? = null
 )
-

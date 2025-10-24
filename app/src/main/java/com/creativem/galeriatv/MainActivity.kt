@@ -2,12 +2,12 @@ package com.creativem.galeriatv
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.os.storage.StorageManager
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -16,48 +16,19 @@ import com.creativem.galeriatv.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
-    private val folderStack = mutableListOf<Uri>()
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var folderAdapter: FolderAdapter
 
-    // Carpeta actual que se está mostrando
-    private var currentFolderUri: Uri? = null
-
-    // Carpeta raíz seleccionada por el usuario (para construir URIs correctas)
-    private var rootFolderUri: Uri? = null
+    private var currentFolderFile: File? = null
+    private val folderStack = mutableListOf<File>()
 
     companion object {
         private const val PREFS_NAME = "gallery_prefs"
-        private const val KEY_LAST_URI = "last_folder_uri"
-    }
-
-    private val folderPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            // Guardar carpeta raíz
-            rootFolderUri = uri
-            currentFolderUri = uri
-
-            // Conceder permisos persistentes
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-
-            // Guardar URI raíz en preferencias
-            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_LAST_URI, uri.toString())
-                .apply()
-
-            loadFolder(uri)
-        } else {
-            Toast.makeText(this, "No se seleccionó ninguna carpeta", Toast.LENGTH_SHORT).show()
-        }
+        private const val KEY_LAST_PATH = "last_folder_path"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,59 +36,86 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        folderAdapter = FolderAdapter(this) { fileUri, isFolder ->
-            if (isFolder) {
-                // Navegar dentro de la subcarpeta
-                loadFolder(fileUri)
-            } else {
-                ViewerActivity.start(this, fileUri)
-            }
+        folderAdapter = FolderAdapter(this) { fileItem, isFolder ->
+            if (isFolder) loadFolder(fileItem.file)
+            else ViewerActivity.start(this, Uri.fromFile(fileItem.file))
         }
 
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
         binding.recyclerView.adapter = folderAdapter
 
-        binding.selectFolderButton.setOnClickListener {
-            openFolderPicker()
-        }
+        binding.selectFolderButton.setOnClickListener { openFolderPicker() }
 
-        // Cargar carpeta raíz guardada o pedir selección la primera vez
-        val lastUriString = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_LAST_URI, null)
+        // Cargar última carpeta usada
+        val lastPath = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_PATH, null)
 
-        if (lastUriString != null) {
-            val savedUri = Uri.parse(lastUriString)
-            rootFolderUri = savedUri
-            currentFolderUri = savedUri
-            loadFolder(savedUri)
+        if (lastPath != null) {
+            val savedFile = File(lastPath)
+            if (savedFile.exists()) loadFolder(savedFile)
+            else openFolderPicker()
         } else {
             openFolderPicker()
         }
     }
 
     private fun openFolderPicker() {
-        folderPickerLauncher.launch(null)
+        val roots = getStorageRoots()
+        if (roots.isEmpty()) {
+            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Mostrar unidades raíz
+        folderAdapter.submitList(roots)
+
+        // Reiniciar stack
+        folderStack.clear()
+        folderStack.addAll(roots.map { it.file })
+
+        // Guardar la primera raíz como carpeta actual
+        currentFolderFile = folderStack.first()
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_PATH, currentFolderFile!!.absolutePath)
+            .apply()
     }
 
-    private fun loadFolder(folderUri: Uri, saveAsCurrent: Boolean = true, addToStack: Boolean = true) {
-        val root = rootFolderUri ?: return
+    private fun getStorageRoots(): List<FileItem> {
+        val roots = mutableListOf<FileItem>()
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            val children = UriHelper.listFiles(this@MainActivity, root, folderUri)
-            withContext(Dispatchers.Main) {
-                folderAdapter.submitList(children)
+        // Interna principal
+        val primary = Environment.getExternalStorageDirectory()
+        if (primary.exists() && primary.canRead()) {
+            roots.add(FileItem(primary, "Almacenamiento interno", true))
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            val sm = getSystemService(Context.STORAGE_SERVICE) as StorageManager
+            sm.storageVolumes.forEach { vol ->
+                val dir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) vol.directory else null
+                if (dir != null && dir.exists() && dir.canRead() && roots.none { it.file == dir }) {
+                    val name = vol.getDescription(this)
+                    roots.add(FileItem(dir, name, true))
+                }
             }
         }
 
-        if (addToStack) {
-            folderStack.add(folderUri)
+        return roots
+    }
+
+    private fun loadFolder(folder: File, saveAsCurrent: Boolean = true, addToStack: Boolean = true) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val children = UriHelper.listFiles(folder)
+            withContext(Dispatchers.Main) { folderAdapter.submitList(children) }
         }
 
+        if (addToStack) folderStack.add(folder)
         if (saveAsCurrent) {
-            currentFolderUri = folderUri
+            currentFolderFile = folder
             getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
-                .putString(KEY_LAST_URI, rootFolderUri.toString())
+                .putString(KEY_LAST_PATH, folder.absolutePath)
                 .apply()
         }
     }
@@ -126,14 +124,11 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("GestureBackNavigation")
     override fun onBackPressed() {
         if (folderStack.size > 1) {
-            // Quitamos la carpeta actual del stack
             folderStack.removeLast()
-            // Cargamos la carpeta anterior sin agregar al stack
             val previousFolder = folderStack.last()
             loadFolder(previousFolder, saveAsCurrent = false, addToStack = false)
         } else {
-            super.onBackPressed() // salir de la app si estamos en la raíz
+            super.onBackPressed()
         }
     }
-
 }

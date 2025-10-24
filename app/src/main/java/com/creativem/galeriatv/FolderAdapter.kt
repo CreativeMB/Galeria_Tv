@@ -1,7 +1,6 @@
 package com.creativem.galeriatv
 
 import android.content.Context
-import android.net.Uri
 import android.os.Build
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -9,10 +8,11 @@ import androidx.annotation.RequiresApi
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.creativem.galeriatv.databinding.ItemFileBinding
+import java.io.File
 
 class FolderAdapter(
     private val context: Context,
-    private val onItemClick: (uri: Uri, isFolder: Boolean) -> Unit
+    private val onItemClick: (fileItem: FileItem, isFolder: Boolean) -> Unit
 ) : RecyclerView.Adapter<FolderAdapter.FolderViewHolder>() {
 
     private var items: List<FileItem> = emptyList()
@@ -32,30 +32,24 @@ class FolderAdapter(
         val item = items[position]
         holder.binding.fileName.text = item.name
 
-        // Cargar thumbnail (si hay, si no usar la propia imagen)
-        val thumbUri = item.thumbnailUri ?: item.uri
+        // Usar thumbnail si existe, si no la propia carpeta/archivo
+        val thumbFile = item.thumbnailFile ?: item.file
         Glide.with(context)
-            .load(thumbUri)
+            .load(thumbFile)
             .centerCrop()
             .placeholder(R.drawable.icono)
             .into(holder.binding.fileIcon)
 
-        // Si es carpeta, aplicar borde de colores simulando carpeta
-        if (item.isFolder) {
-            holder.binding.fileIcon.foreground =
-                context.getDrawable(R.drawable.overlay_folder_border)
-        } else {
-            holder.binding.fileIcon.foreground = null
-        }
-
-
+        // Si es carpeta, agregar overlay
+        holder.binding.fileIcon.foreground = if (item.isFolder) {
+            context.getDrawable(R.drawable.overlay_folder_border)
+        } else null
 
         // Click listener
         holder.binding.root.setOnClickListener {
-            onItemClick(item.uri, item.isFolder)
+            onItemClick(item, item.isFolder)
         }
     }
-
 
     override fun getItemCount(): Int = items.size
 
