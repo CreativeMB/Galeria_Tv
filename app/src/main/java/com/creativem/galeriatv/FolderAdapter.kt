@@ -54,8 +54,19 @@ class FolderAdapter(
         holder.binding.root.layoutParams.height = itemWidth + dpToPx(40)
         holder.binding.root.requestLayout()
 
+        // Determinar qué imagen cargar: primera imagen dentro de la carpeta o el archivo mismo
+        val imageToLoad = if (item.isFolder) {
+            val files = item.file.listFiles { f ->
+                val name = f.name.lowercase()
+                name.endsWith(".jpg") || name.endsWith(".png") || name.endsWith(".jpeg")
+            }
+            files?.firstOrNull() // primera imagen si existe
+        } else {
+            item.file
+        }
+
         Glide.with(context)
-            .load(item.thumbnailFile ?: item.file)
+            .load(imageToLoad ?: R.drawable.icono) // usamos imageToLoad en vez de item.file
             .centerCrop()
             .placeholder(R.drawable.icono)
             .into(holder.binding.fileIcon)
@@ -68,6 +79,7 @@ class FolderAdapter(
             onItemClick(item, item.isFolder)
         }
     }
+
 
     override fun getItemCount(): Int = items.size
 

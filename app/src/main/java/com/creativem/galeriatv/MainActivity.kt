@@ -167,15 +167,22 @@ class MainActivity : AppCompatActivity() {
     ) {
         lifecycleScope.launch(Dispatchers.IO) {
             var children = UriHelper.listFiles(folder)
+
+            // Ordenar carpetas y archivos por fecha más reciente primero
             children = children.sortedWith(
-                compareByDescending<FileItem> { it.isFolder }.thenBy { it.name.lowercase() }
+                compareByDescending<FileItem> { it.isFolder }          // Carpetas primero
+                    .thenByDescending { it.file.lastModified() }      // Más recientes primero
             )
-            withContext(Dispatchers.Main) { folderAdapter.submitList(children) }
+
+            withContext(Dispatchers.Main) {
+                folderAdapter.submitList(children)
+            }
         }
 
         if (saveAsCurrent) currentFolderFile = folder
         if (addToStack) folderStack.add(folder)
     }
+
 
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @SuppressLint("GestureBackNavigation")

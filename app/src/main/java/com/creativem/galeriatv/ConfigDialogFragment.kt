@@ -48,16 +48,19 @@ class ConfigDialogFragment : DialogFragment() {
             if (it == currentColumns) "$it ítems por fila ✅" else "$it ítems por fila"
         }.toTypedArray()
 
+        // Crear AlertDialog una sola vez
+        val alertDialog = androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Selecciona tamaño de cuadrícula")
+            .setItems(opciones) { _, index ->
+                val columnasSeleccionadas = index + 1
+                prefs.edit().putInt("grid_columns", columnasSeleccionadas).apply()
+                listener?.onColumnCountSelected(columnasSeleccionadas)
+                dismiss()
+            }
+            .create()
+
         binding.btnCambiarColumnas.setOnClickListener {
-            androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                .setTitle("Selecciona tamaño de cuadrícula")
-                .setItems(opciones) { _, index ->
-                    val columnasSeleccionadas = index + 1
-                    prefs.edit().putInt("grid_columns", columnasSeleccionadas).apply()
-                    listener?.onColumnCountSelected(columnasSeleccionadas)
-                    dismiss()
-                }
-                .show()
+            alertDialog.show()
         }
     }
 
