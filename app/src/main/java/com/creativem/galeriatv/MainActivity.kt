@@ -9,12 +9,14 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import android.view.View
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import com.creativem.galeriatv.databinding.ActivityMainBinding
+import com.creativem.galeriatv.dialogs.ConfigDialogFragment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -22,6 +24,7 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var gridLayoutManager: GridLayoutManager
     private lateinit var binding: ActivityMainBinding
     private lateinit var folderAdapter: FolderAdapter
 
@@ -33,20 +36,49 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_DEFAULT_FOLDER = "default_folder_path"
     }
 
+    private var recyclerWidthMeasured = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Inicializar adaptador
         folderAdapter = FolderAdapter(this) { fileItem, isFolder ->
-            if (isFolder) loadFolder(fileItem.file) // Navegación por subcarpetas
+            if (isFolder) loadFolder(fileItem.file)
             else ViewerActivity.start(this, Uri.fromFile(fileItem.file))
         }
 
-        binding.recyclerView.layoutManager = LinearLayoutManager(this)
+        // Leer columnas guardadas
+        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        val columnas = prefs.getInt("grid_columns", 1)
+
+        gridLayoutManager = GridLayoutManager(this, columnas)
+        binding.recyclerView.layoutManager = gridLayoutManager
         binding.recyclerView.adapter = folderAdapter
 
-        // Botón para seleccionar la carpeta inicial
+        // Esperar a que RecyclerView tenga ancho medido
+        binding.recyclerView.post {
+            val recyclerWidth = binding.recyclerView.width
+            folderAdapter.setSpanCount(columnas)
+            folderAdapter.setRecyclerWidth(recyclerWidth)
+            recyclerWidthMeasured = true
+        }
+
+        // Configuración de columnas desde el menú
+        binding.imgConfig.setOnClickListener {
+            val configDialog = ConfigDialogFragment()
+            configDialog.setOnColumnChangeListener(object :
+                ConfigDialogFragment.OnColumnChangeListener {
+                override fun onColumnCountSelected(columnCount: Int) {
+                    updateColumnCount(columnCount)
+                }
+            })
+            configDialog.show(supportFragmentManager, "ConfigDialog")
+        }
+
+        // Botón para seleccionar carpeta inicial
         binding.selectFolderButton.setOnClickListener {
             currentFolderFile?.let { folder ->
                 getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -56,12 +88,11 @@ class MainActivity : AppCompatActivity() {
 
                 Toast.makeText(this, "Carpeta predeterminada guardada", Toast.LENGTH_SHORT).show()
                 binding.selectFolderButton.visibility = View.GONE
-
-                loadFolder(folder) // Carga normal para navegación
+                loadFolder(folder)
             }
         }
 
-        // Al iniciar la app, cargar la carpeta predeterminada si existe
+        // Cargar carpeta predeterminada si existe
         val defaultPath = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_DEFAULT_FOLDER, null)
 
@@ -70,39 +101,50 @@ class MainActivity : AppCompatActivity() {
             if (defaultFolder.exists()) {
                 loadFolder(defaultFolder, saveAsCurrent = true, addToStack = true)
                 binding.selectFolderButton.visibility = View.GONE
-            } else {
-                openFolderPicker() // Si no existe, permitir seleccionar
-            }
-        } else {
-            openFolderPicker() // Selección inicial
-        }
+            } else openFolderPicker()
+        } else openFolderPicker()
 
         checkStoragePermissions()
+    }
+
+    // 🔹 Método central para actualizar columnas sin loop
+    private fun updateColumnCount(columnCount: Int) {
+        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putInt("grid_columns", columnCount).apply()
+
+        gridLayoutManager.spanCount = columnCount
+
+        // Recalcular ancho de items si el RecyclerView ya fue medido
+        if (recyclerWidthMeasured) {
+            folderAdapter.setSpanCount(columnCount)
+            folderAdapter.setRecyclerWidth(binding.recyclerView.width)
+        } else {
+            binding.recyclerView.post {
+                folderAdapter.setSpanCount(columnCount)
+                folderAdapter.setRecyclerWidth(binding.recyclerView.width)
+                recyclerWidthMeasured = true
+            }
+        }
     }
 
     private fun openFolderPicker() {
         val roots = getStorageRoots()
         if (roots.isEmpty()) {
-            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT)
+                .show()
             return
         }
 
         folderAdapter.submitList(roots)
-
         folderStack.clear()
         folderStack.addAll(roots.map { it.file })
-
         currentFolderFile = folderStack.first()
     }
 
     private fun getStorageRoots(): List<FileItem> {
         val roots = mutableListOf<FileItem>()
-
-        // Interna principal
         val primary = Environment.getExternalStorageDirectory()
-        if (primary.exists() && primary.canRead()) {
-            roots.add(FileItem(primary, "Almacenamiento interno", true))
-        }
+        if (primary.exists() && primary.canRead()) roots.add(FileItem(primary, "Almacenamiento interno", true))
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             val sm = getSystemService(Context.STORAGE_SERVICE) as StorageManager
@@ -125,16 +167,10 @@ class MainActivity : AppCompatActivity() {
     ) {
         lifecycleScope.launch(Dispatchers.IO) {
             var children = UriHelper.listFiles(folder)
-
-            // Ordenar carpetas primero, luego archivos
             children = children.sortedWith(
-                compareByDescending<FileItem> { it.isFolder }
-                    .thenBy { it.name.lowercase() }
+                compareByDescending<FileItem> { it.isFolder }.thenBy { it.name.lowercase() }
             )
-
-            withContext(Dispatchers.Main) {
-                folderAdapter.submitList(children)
-            }
+            withContext(Dispatchers.Main) { folderAdapter.submitList(children) }
         }
 
         if (saveAsCurrent) currentFolderFile = folder
@@ -148,35 +184,25 @@ class MainActivity : AppCompatActivity() {
             folderStack.removeLast()
             val previousFolder = folderStack.last()
             loadFolder(previousFolder, saveAsCurrent = false, addToStack = false)
-        } else {
-            super.onBackPressed()
-        }
+        } else super.onBackPressed()
     }
 
     private val storagePermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
             val granted = permissions.values.all { it }
-            if (!granted) {
-                Toast.makeText(this, "Permisos necesarios para acceder al almacenamiento", Toast.LENGTH_SHORT).show()
-            } else {
-                openFolderPicker()
-            }
+            if (!granted) Toast.makeText(this, "Permisos necesarios para acceder al almacenamiento", Toast.LENGTH_SHORT).show()
+            else openFolderPicker()
         }
 
     private fun checkStoragePermissions() {
         val permissions = mutableListOf<String>()
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
             permissions.add(android.Manifest.permission.READ_MEDIA_VIDEO)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             permissions.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
         }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            permissions.add(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE)
-        }
-
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) permissions.add(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE)
         storagePermissionLauncher.launch(permissions.toTypedArray())
     }
 }

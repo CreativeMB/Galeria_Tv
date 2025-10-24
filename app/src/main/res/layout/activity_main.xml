@@ -1,18 +1,45 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:padding="16dp"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <Button
-        android:id="@+id/selectFolderButton"
+    <!-- Contenedor principal -->
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="16dp"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Seleccionar Carpeta" />
+        android:layout_height="match_parent">
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"/>
-</LinearLayout>
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:descendantFocusability="afterDescendants"
+            android:focusable="true"
+            android:focusableInTouchMode="true"/>
+
+        <Button
+            android:id="@+id/selectFolderButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Seleccionar Carpeta Predeterminada"
+            android:focusable="true"
+            android:focusableInTouchMode="true"/>
+    </LinearLayout>
+
+    <!-- Imagen flotante de configuración (encima de todo) -->
+    <ImageView
+        android:id="@+id/imgConfig"
+        android:layout_width="65dp"
+        android:layout_height="65dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="20dp"
+        android:background="@drawable/bg_floating_icon"
+        android:padding="12dp"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:contentDescription="Configuración"
+        android:src="@drawable/icono"
+        android:nextFocusDown="@id/recyclerView"/>
+</FrameLayout>
