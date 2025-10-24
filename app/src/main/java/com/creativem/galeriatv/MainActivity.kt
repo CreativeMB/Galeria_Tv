@@ -7,7 +7,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
+import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -28,7 +30,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val PREFS_NAME = "gallery_prefs"
-        private const val KEY_LAST_PATH = "last_folder_path"
+        private const val KEY_DEFAULT_FOLDER = "default_folder_path"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,26 +39,45 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         folderAdapter = FolderAdapter(this) { fileItem, isFolder ->
-            if (isFolder) loadFolder(fileItem.file)
+            if (isFolder) loadFolder(fileItem.file) // Navegación por subcarpetas
             else ViewerActivity.start(this, Uri.fromFile(fileItem.file))
         }
 
         binding.recyclerView.layoutManager = LinearLayoutManager(this)
         binding.recyclerView.adapter = folderAdapter
 
-        binding.selectFolderButton.setOnClickListener { openFolderPicker() }
+        // Botón para seleccionar la carpeta inicial
+        binding.selectFolderButton.setOnClickListener {
+            currentFolderFile?.let { folder ->
+                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_DEFAULT_FOLDER, folder.absolutePath)
+                    .apply()
 
-        // Cargar última carpeta usada
-        val lastPath = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_LAST_PATH, null)
+                Toast.makeText(this, "Carpeta predeterminada guardada", Toast.LENGTH_SHORT).show()
+                binding.selectFolderButton.visibility = View.GONE
 
-        if (lastPath != null) {
-            val savedFile = File(lastPath)
-            if (savedFile.exists()) loadFolder(savedFile)
-            else openFolderPicker()
-        } else {
-            openFolderPicker()
+                loadFolder(folder) // Carga normal para navegación
+            }
         }
+
+        // Al iniciar la app, cargar la carpeta predeterminada si existe
+        val defaultPath = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_DEFAULT_FOLDER, null)
+
+        if (defaultPath != null) {
+            val defaultFolder = File(defaultPath)
+            if (defaultFolder.exists()) {
+                loadFolder(defaultFolder, saveAsCurrent = true, addToStack = true)
+                binding.selectFolderButton.visibility = View.GONE
+            } else {
+                openFolderPicker() // Si no existe, permitir seleccionar
+            }
+        } else {
+            openFolderPicker() // Selección inicial
+        }
+
+        checkStoragePermissions()
     }
 
     private fun openFolderPicker() {
@@ -66,19 +87,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Mostrar unidades raíz
         folderAdapter.submitList(roots)
 
-        // Reiniciar stack
         folderStack.clear()
         folderStack.addAll(roots.map { it.file })
 
-        // Guardar la primera raíz como carpeta actual
         currentFolderFile = folderStack.first()
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_LAST_PATH, currentFolderFile!!.absolutePath)
-            .apply()
     }
 
     private fun getStorageRoots(): List<FileItem> {
@@ -104,20 +118,27 @@ class MainActivity : AppCompatActivity() {
         return roots
     }
 
-    private fun loadFolder(folder: File, saveAsCurrent: Boolean = true, addToStack: Boolean = true) {
+    private fun loadFolder(
+        folder: File,
+        saveAsCurrent: Boolean = true,
+        addToStack: Boolean = true
+    ) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val children = UriHelper.listFiles(folder)
-            withContext(Dispatchers.Main) { folderAdapter.submitList(children) }
+            var children = UriHelper.listFiles(folder)
+
+            // Ordenar carpetas primero, luego archivos
+            children = children.sortedWith(
+                compareByDescending<FileItem> { it.isFolder }
+                    .thenBy { it.name.lowercase() }
+            )
+
+            withContext(Dispatchers.Main) {
+                folderAdapter.submitList(children)
+            }
         }
 
+        if (saveAsCurrent) currentFolderFile = folder
         if (addToStack) folderStack.add(folder)
-        if (saveAsCurrent) {
-            currentFolderFile = folder
-            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_LAST_PATH, folder.absolutePath)
-                .apply()
-        }
     }
 
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
@@ -130,5 +151,32 @@ class MainActivity : AppCompatActivity() {
         } else {
             super.onBackPressed()
         }
+    }
+
+    private val storagePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            val granted = permissions.values.all { it }
+            if (!granted) {
+                Toast.makeText(this, "Permisos necesarios para acceder al almacenamiento", Toast.LENGTH_SHORT).show()
+            } else {
+                openFolderPicker()
+            }
+        }
+
+    private fun checkStoragePermissions() {
+        val permissions = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+            permissions.add(android.Manifest.permission.READ_MEDIA_VIDEO)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            permissions.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            permissions.add(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+        }
+
+        storagePermissionLauncher.launch(permissions.toTypedArray())
     }
 }
