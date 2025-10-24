@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="folder_border_top">#F9D67A</color> <!-- Amarillo dorado intenso -->
+    <color name="folder_border_middle">#F2C94C</color> <!-- Amarillo medio -->
+    <color name="folder_border_bottom">#FCE49C</color> <!-- Amarillo claro/beige -->
+
+
+
+
+</resources>

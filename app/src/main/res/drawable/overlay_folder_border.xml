@@ -1,0 +1,43 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Borde superior -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent"/>
+            <stroke
+                android:width="6dp"
+                android:color="@color/folder_border_top"/>
+        </shape>
+    </item>
+
+    <!-- Borde medio -->
+    <item android:top="2dp" android:bottom="2dp" android:left="2dp" android:right="2dp">
+        <shape android:shape="rectangle">
+            <stroke
+                android:width="4dp"
+                android:color="@color/folder_border_middle"/>
+        </shape>
+    </item>
+
+    <!-- Borde inferior -->
+    <item android:top="4dp" android:bottom="4dp" android:left="4dp" android:right="4dp">
+        <shape android:shape="rectangle">
+            <stroke
+                android:width="2dp"
+                android:color="@color/folder_border_bottom"/>
+        </shape>
+    </item>
+
+    <!-- Icono de carpeta pequeño en la esquina superior derecha -->
+    <item
+        android:gravity="top|end"
+        android:top="4dp"
+        android:right="4dp"
+        android:width="24dp"
+        android:height="24dp">
+        <bitmap
+            android:src="@drawable/icono"
+            android:tileMode="disabled"/>
+    </item>
+
+</layer-list>
