@@ -30,8 +30,8 @@
 
     <!-- Botón para ordenar -->
     <Button
-        android:id="@+id/btnOrdenar"
-        android:text="Ordenar elementos"
+        android:id="@+id/CarpetaPredeterminada"
+        android:text="Cambiar carpeta predeterminada"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"

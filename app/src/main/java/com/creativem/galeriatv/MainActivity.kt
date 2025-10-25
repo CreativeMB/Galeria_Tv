@@ -2,11 +2,13 @@ package com.creativem.galeriatv
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
+import android.provider.Settings
 import android.view.View
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -76,17 +78,32 @@ class MainActivity : AppCompatActivity() {
             recyclerWidthMeasured = true
         }
 
-        // Configuración de columnas desde el menú
         binding.imgConfig.setOnClickListener {
             val configDialog = ConfigDialogFragment()
-            configDialog.setOnColumnChangeListener(object :
-                ConfigDialogFragment.OnColumnChangeListener {
+
+            // Cambiar columnas
+            configDialog.setOnColumnChangeListener(object : ConfigDialogFragment.OnColumnChangeListener {
                 override fun onColumnCountSelected(columnCount: Int) {
                     updateColumnCount(columnCount)
                 }
             })
+
+            // Cambiar carpeta predeterminada
+            configDialog.setOnFolderChangeListener(object : ConfigDialogFragment.OnFolderChangeListener {
+                override fun onFolderSelected() {
+                    // Abrir selector de carpetas
+                    openFolderPicker()
+
+                    // Mostrar nuevamente el botón para guardar la nueva carpeta predeterminada
+                    binding.selectFolderButton.visibility = View.VISIBLE
+                }
+            })
+
+            // Mostrar el diálogo de configuración
             configDialog.show(supportFragmentManager, "ConfigDialog")
         }
+
+
 
         // Botón para seleccionar carpeta inicial
         binding.selectFolderButton.setOnClickListener {
@@ -113,6 +130,8 @@ class MainActivity : AppCompatActivity() {
                 binding.selectFolderButton.visibility = View.GONE
             } else openFolderPicker()
         } else openFolderPicker()
+
+
 
         checkStoragePermissions()
     }
@@ -212,14 +231,46 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun checkStoragePermissions() {
-        val permissions = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
-            permissions.add(android.Manifest.permission.READ_MEDIA_VIDEO)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            permissions.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                // Android 13+
+                val permissions = arrayOf(
+                    android.Manifest.permission.READ_MEDIA_IMAGES,
+                    android.Manifest.permission.READ_MEDIA_VIDEO
+                )
+                val granted = permissions.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+                if (!granted) {
+                    storagePermissionLauncher.launch(permissions)
+                } else {
+                    openFolderPicker()
+                }
+            }
+
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                // Android 11 y 12
+                if (!Environment.isExternalStorageManager()) {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = Uri.parse("package:$packageName")
+                    startActivity(intent)
+                } else {
+                    openFolderPicker()
+                }
+            }
+
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                // Android 6–10
+                if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
+                } else {
+                    openFolderPicker()
+                }
+            }
+
+            else -> {
+                // Android < 6, permisos concedidos automáticamente
+                openFolderPicker()
+            }
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) permissions.add(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE)
-        storagePermissionLauncher.launch(permissions.toTypedArray())
     }
+
 }

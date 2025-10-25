@@ -7,21 +7,33 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.fragment.app.DialogFragment
-import androidx.recyclerview.widget.GridLayoutManager
 import com.creativem.galeriatv.databinding.DialogConfigBinding
 import com.creativem.galeriatv.R
 
 class ConfigDialogFragment : DialogFragment() {
+
+    // 🔹 Interfaz para cambiar columnas
     interface OnColumnChangeListener {
         fun onColumnCountSelected(columnCount: Int)
     }
 
+    // 🔹 Interfaz para cambiar carpeta predeterminada
+    interface OnFolderChangeListener {
+        fun onFolderSelected()
+    }
+
     private var _binding: DialogConfigBinding? = null
     private val binding get() = _binding!!
-    private var listener: OnColumnChangeListener? = null
 
-    fun setOnColumnChangeListener(l: OnColumnChangeListener) {
-        listener = l
+    private var columnListener: OnColumnChangeListener? = null
+    private var folderListener: OnFolderChangeListener? = null
+
+    fun setOnColumnChangeListener(listener: OnColumnChangeListener) {
+        columnListener = listener
+    }
+
+    fun setOnFolderChangeListener(listener: OnFolderChangeListener) {
+        folderListener = listener
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,22 +51,22 @@ class ConfigDialogFragment : DialogFragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        // 🔹 Cerrar diálogo
         binding.btnCerrar.setOnClickListener { dismiss() }
 
+        // 🔹 Configuración de columnas
         val prefs = requireContext().getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-        val currentColumns = prefs.getInt("grid_columns", 1) // valor por defecto
-
+        val currentColumns = prefs.getInt("grid_columns", 1)
         val opciones = (1..8).map {
             if (it == currentColumns) "$it ítems por fila ✅" else "$it ítems por fila"
         }.toTypedArray()
 
-        // Crear AlertDialog una sola vez
         val alertDialog = androidx.appcompat.app.AlertDialog.Builder(requireContext())
             .setTitle("Selecciona tamaño de cuadrícula")
             .setItems(opciones) { _, index ->
                 val columnasSeleccionadas = index + 1
                 prefs.edit().putInt("grid_columns", columnasSeleccionadas).apply()
-                listener?.onColumnCountSelected(columnasSeleccionadas)
+                columnListener?.onColumnCountSelected(columnasSeleccionadas)
                 dismiss()
             }
             .create()
@@ -62,8 +74,13 @@ class ConfigDialogFragment : DialogFragment() {
         binding.btnCambiarColumnas.setOnClickListener {
             alertDialog.show()
         }
-    }
 
+        // 🔹 Configuración de carpeta predeterminada
+        binding.CarpetaPredeterminada.setOnClickListener {
+            folderListener?.onFolderSelected()
+            dismiss() // opcional, cerrar diálogo al seleccionar
+        }
+    }
 
     override fun onStart() {
         super.onStart()
