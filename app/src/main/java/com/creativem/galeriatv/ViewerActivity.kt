@@ -89,10 +89,11 @@ class ViewerActivity : AppCompatActivity() {
             ): Boolean {
                 if (e1 == null || e2 == null) return false
                 val diffX = e2.x - e1.x
-                if (kotlin.math.abs(diffX) > SWIPE_THRESHOLD && kotlin.math.abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
-                    if (diffX > 0) previousMedia() else nextMedia()
+                if (abs(diffX) > SWIPE_THRESHOLD && abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+                    if (diffX > 0) nextMedia() else previousMedia()
                     return true
                 }
+
                 return false
             }
         })
