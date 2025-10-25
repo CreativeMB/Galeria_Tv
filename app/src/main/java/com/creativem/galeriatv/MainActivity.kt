@@ -46,9 +46,19 @@ class MainActivity : AppCompatActivity() {
 
         // Inicializar adaptador
         folderAdapter = FolderAdapter(this) { fileItem, isFolder ->
-            if (isFolder) loadFolder(fileItem.file)
-            else ViewerActivity.start(this, Uri.fromFile(fileItem.file))
+            if (isFolder) {
+                // Abrir la carpeta
+                loadFolder(fileItem.file)
+            } else {
+                // Abrir archivo en ViewerActivity pasando también la carpeta padre
+                ViewerActivity.start(
+                    this,
+                    Uri.fromFile(fileItem.file),
+                    fileItem.file.parent ?: "" // <-- aquí pasamos folderPath
+                )
+            }
         }
+
 
         // Leer columnas guardadas
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
