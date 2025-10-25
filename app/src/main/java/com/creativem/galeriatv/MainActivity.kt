@@ -238,20 +238,26 @@ class MainActivity : AppCompatActivity() {
                     android.Manifest.permission.READ_MEDIA_IMAGES,
                     android.Manifest.permission.READ_MEDIA_VIDEO
                 )
-                val granted = permissions.all { checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+                val granted = permissions.all {
+                    checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                }
+
                 if (!granted) {
-                    storagePermissionLauncher.launch(permissions)
+                    try {
+                        storagePermissionLauncher.launch(permissions)
+                    } catch (e: Exception) {
+                        // Si no se puede lanzar (en Android TV), abrir ajustes
+                        openAppAllFilesPermission()
+                    }
                 } else {
                     openFolderPicker()
                 }
             }
 
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                // Android 11 y 12
+                // Android 11–12
                 if (!Environment.isExternalStorageManager()) {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    intent.data = Uri.parse("package:$packageName")
-                    startActivity(intent)
+                    openAppAllFilesPermission()
                 } else {
                     openFolderPicker()
                 }
@@ -259,18 +265,44 @@ class MainActivity : AppCompatActivity() {
 
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
                 // Android 6–10
-                if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
+                if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    try {
+                        storagePermissionLauncher.launch(
+                            arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        )
+                    } catch (e: Exception) {
+                        openAppAllFilesPermission()
+                    }
                 } else {
                     openFolderPicker()
                 }
             }
 
             else -> {
-                // Android < 6, permisos concedidos automáticamente
                 openFolderPicker()
             }
         }
     }
-
+    private fun openAppAllFilesPermission() {
+        try {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            intent.data = Uri.parse("package:$packageName")
+            startActivity(intent)
+            Toast.makeText(
+                this,
+                "Por favor, concede el permiso de almacenamiento y vuelve a abrir la app.",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            try {
+                // Alternativa general si el anterior falla
+                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                startActivity(intent)
+            } catch (ex: Exception) {
+                Toast.makeText(this, "No se pudo abrir la configuración de permisos", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 }
