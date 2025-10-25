@@ -3,11 +3,14 @@ package com.creativem.galeriatv
 import android.content.Context
 import android.os.Build
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.creativem.galeriatv.databinding.ItemFileBinding
+import java.io.File
 
 class FolderAdapter(
     private val context: Context,
@@ -54,32 +57,55 @@ class FolderAdapter(
         holder.binding.root.layoutParams.height = itemWidth + dpToPx(40)
         holder.binding.root.requestLayout()
 
-        // Determinar qué imagen cargar: primera imagen dentro de la carpeta o el archivo mismo
+        // --- Determinar qué imagen cargar ---
         val imageToLoad = if (item.isFolder) {
             val files = item.file.listFiles { f ->
                 val name = f.name.lowercase()
                 name.endsWith(".jpg") || name.endsWith(".png") || name.endsWith(".jpeg")
             }
-            files?.firstOrNull() // primera imagen si existe
+            files?.firstOrNull()
         } else {
             item.file
         }
 
+        // --- Detectar si es video ---
+        val extension = item.file.extension.lowercase()
+        val isVideo = extension in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")
+
+        // --- Animación al enfocar (TV) ---
+        holder.itemView.setOnFocusChangeListener { view, hasFocus ->
+            if (hasFocus) {
+                view.animate().scaleX(1.12f).scaleY(1.12f).setDuration(150).start()
+                view.elevation = 16f
+                view.background = ContextCompat.getDrawable(context, R.drawable.item_background_selector)
+            } else {
+                view.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
+                view.elevation = 0f
+                view.background = null
+            }
+        }
+
+        // --- Cargar imagen ---
         Glide.with(context)
-            .load(imageToLoad ?: R.drawable.icono) // usamos imageToLoad en vez de item.file
+            .load(imageToLoad ?: R.drawable.icono)
             .centerCrop()
             .placeholder(R.drawable.icono)
             .into(holder.binding.fileIcon)
 
+        // --- Overlay de carpeta ---
         holder.binding.fileIcon.foreground = if (item.isFolder) {
             context.getDrawable(R.drawable.overlay_folder_border)
         } else null
 
+        // --- Ícono de play si es video ---
+        holder.binding.playOverlay.visibility = if (isVideo) View.VISIBLE else View.GONE
+
+        // --- Click del ítem ---
         holder.binding.root.setOnClickListener {
             onItemClick(item, item.isFolder)
         }
-    }
 
+    }
 
     override fun getItemCount(): Int = items.size
 

@@ -1,20 +1,22 @@
 package com.creativem.galeriatv
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.creativem.galeriatv.databinding.ActivityMainBinding
@@ -36,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PREFS_NAME = "gallery_prefs"
         private const val KEY_DEFAULT_FOLDER = "default_folder_path"
+        private const val KEY_DEFAULT_VIDEO_PLAYER = "default_video_player"
     }
 
     private var recyclerWidthMeasured = false
@@ -49,28 +52,27 @@ class MainActivity : AppCompatActivity() {
         // Inicializar adaptador
         folderAdapter = FolderAdapter(this) { fileItem, isFolder ->
             if (isFolder) {
-                // Abrir la carpeta
                 loadFolder(fileItem.file)
             } else {
-                // Abrir archivo en ViewerActivity pasando también la carpeta padre
-                ViewerActivity.start(
-                    this,
-                    Uri.fromFile(fileItem.file),
-                    fileItem.file.parent ?: "" // <-- aquí pasamos folderPath
-                )
+                if (fileItem.file.extension.lowercase() in listOf("mp4","mkv","avi","mov","wmv","flv")) {
+                    openVideo(fileItem.file)
+                } else {
+                    ViewerActivity.start(
+                        this,
+                        Uri.fromFile(fileItem.file),
+                        fileItem.file.parent ?: ""
+                    )
+                }
             }
         }
 
-
-        // Leer columnas guardadas
+        // Columnas guardadas
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
         val columnas = prefs.getInt("grid_columns", 1)
-
         gridLayoutManager = GridLayoutManager(this, columnas)
         binding.recyclerView.layoutManager = gridLayoutManager
         binding.recyclerView.adapter = folderAdapter
 
-        // Esperar a que RecyclerView tenga ancho medido
         binding.recyclerView.post {
             val recyclerWidth = binding.recyclerView.width
             folderAdapter.setSpanCount(columnas)
@@ -78,34 +80,27 @@ class MainActivity : AppCompatActivity() {
             recyclerWidthMeasured = true
         }
 
+        // Configuración
         binding.imgConfig.setOnClickListener {
             val configDialog = ConfigDialogFragment()
 
-            // Cambiar columnas
             configDialog.setOnColumnChangeListener(object : ConfigDialogFragment.OnColumnChangeListener {
                 override fun onColumnCountSelected(columnCount: Int) {
                     updateColumnCount(columnCount)
                 }
             })
 
-            // Cambiar carpeta predeterminada
             configDialog.setOnFolderChangeListener(object : ConfigDialogFragment.OnFolderChangeListener {
                 override fun onFolderSelected() {
-                    // Abrir selector de carpetas
                     openFolderPicker()
-
-                    // Mostrar nuevamente el botón para guardar la nueva carpeta predeterminada
                     binding.selectFolderButton.visibility = View.VISIBLE
                 }
             })
 
-            // Mostrar el diálogo de configuración
             configDialog.show(supportFragmentManager, "ConfigDialog")
         }
 
-
-
-        // Botón para seleccionar carpeta inicial
+        // Guardar carpeta predeterminada
         binding.selectFolderButton.setOnClickListener {
             currentFolderFile?.let { folder ->
                 getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -119,31 +114,173 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Cargar carpeta predeterminada si existe
+        // Cargar carpeta predeterminada
         val defaultPath = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_DEFAULT_FOLDER, null)
 
         if (defaultPath != null) {
             val defaultFolder = File(defaultPath)
             if (defaultFolder.exists()) {
-                loadFolder(defaultFolder, saveAsCurrent = true, addToStack = true)
+                folderStack.clear()
+                folderStack.add(defaultFolder)
+                loadFolder(defaultFolder, saveAsCurrent = true, addToStack = false)
                 binding.selectFolderButton.visibility = View.GONE
             } else openFolderPicker()
         } else openFolderPicker()
 
-
-
         checkStoragePermissions()
     }
 
-    // 🔹 Método central para actualizar columnas sin loop
-    private fun updateColumnCount(columnCount: Int) {
-        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-        prefs.edit().putInt("grid_columns", columnCount).apply()
+    fun selectDefaultVideoPlayer() {
+        try {
+            val pm = packageManager
 
+            // Lista de apps de video populares
+            val videoApps = listOf(
+                "org.videolan.vlc",       // VLC
+                "com.mxtech.videoplayer.ad", // MX Player
+                "com.mxtech.videoplayer.pro", // MX Player Pro
+                "com.google.android.videos", // Google TV / Play Movies
+                "com.android.gallery3d"   // Galería
+            )
+
+            // Detectar apps instaladas
+            val installedApps = mutableListOf<Pair<String, String>>() // Pair<packageName, label>
+            videoApps.forEach { pkg ->
+                try {
+                    val info = pm.getApplicationInfo(pkg, 0)
+                    val label = pm.getApplicationLabel(info).toString()
+                    installedApps.add(Pair(pkg, label))
+                    Log.d("SelectVideoPlayer", "App instalada: $pkg - $label")
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.d("SelectVideoPlayer", "App no instalada: $pkg")
+                }
+            }
+
+            if (installedApps.isEmpty()) {
+                Toast.makeText(this, "No se encontraron apps de video instaladas", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            // 🔹 Mostrar diálogo con todas las apps instaladas (sin selección automática)
+            val labels = installedApps.map { it.second }.toTypedArray()
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Selecciona reproductor de video predeterminado")
+                .setItems(labels) { _, index ->
+                    val selectedPackage = installedApps[index].first
+                    saveDefaultVideoPlayer(selectedPackage)
+                    Toast.makeText(this, "Reproductor guardado: ${installedApps[index].second}", Toast.LENGTH_SHORT).show()
+                    Log.d("SelectVideoPlayer", "Usuario seleccionó: ${installedApps[index].first}")
+                }
+                .show()
+
+        } catch (e: Exception) {
+            Log.e("SelectVideoPlayer", "Error al seleccionar reproductor", e)
+            Toast.makeText(this, "Error al seleccionar reproductor", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Guardar reproductor predeterminado */
+    private fun saveDefaultVideoPlayer(packageName: String) {
+        getSharedPreferences("gallery_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_DEFAULT_VIDEO_PLAYER, packageName)
+            .apply()
+    }
+
+
+    /** Abrir video con reproductor predeterminado */
+    fun openVideo(file: File) {
+        try {
+            Log.d("OpenVideoDebug", "Intentando abrir video: ${file.absolutePath}")
+
+            val videoUri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                file
+            )
+            Log.d("OpenVideoDebug", "Video URI generado: $videoUri")
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(videoUri, "video/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val defaultPlayer = prefs.getString(KEY_DEFAULT_VIDEO_PLAYER, null)
+
+            if (!defaultPlayer.isNullOrEmpty()) {
+                // Verificar que la app aún existe
+                val resolve = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                    .find { it.activityInfo.packageName == defaultPlayer }
+
+                if (resolve != null) {
+                    intent.setPackage(defaultPlayer)
+                } else {
+                    // Si ya no existe, limpiar la preferencia
+                    prefs.edit().remove(KEY_DEFAULT_VIDEO_PLAYER).apply()
+                    Toast.makeText(this, "El reproductor predeterminado ya no está instalado", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            val resolveInfos = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            Log.d("OpenVideoDebug", "Apps encontradas: ${resolveInfos.size}")
+
+            if (resolveInfos.isEmpty()) {
+                Toast.makeText(this, "No hay ninguna app que pueda abrir este video", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            startActivity(intent)
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "No se pudo abrir el video", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+
+    /** Cargar carpeta */
+    fun loadFolder(folder: File, saveAsCurrent: Boolean = true, addToStack: Boolean = true) {
+        if (addToStack && (folderStack.isEmpty() || folderStack.last() != folder)) {
+            folderStack.add(folder)
+        }
+        currentFolderFile = folder
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val children = UriHelper.listFiles(folder)
+            val sorted = children.sortedWith(
+                compareBy<FileItem> {
+                    when {
+                        it.isFolder -> 0
+                        it.file.extension.lowercase() in listOf("jpg","jpeg","png","gif") -> 1
+                        it.file.extension.lowercase() in listOf("mp4","mkv","avi","mov","wmv","flv") -> 2
+                        else -> 3
+                    }
+                }.thenByDescending { it.file.lastModified() }
+            )
+
+            withContext(Dispatchers.Main) {
+                folderAdapter.submitList(sorted)
+            }
+        }
+    }
+
+    /** Control de back en carpetas */
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    override fun onBackPressed() {
+        if (folderStack.size > 1) {
+            folderStack.removeLast()
+            loadFolder(folderStack.last(), saveAsCurrent = false, addToStack = false)
+        } else super.onBackPressed()
+    }
+
+    /** Cambiar columnas */
+    private fun updateColumnCount(columnCount: Int) {
+        getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+            .edit().putInt("grid_columns", columnCount).apply()
         gridLayoutManager.spanCount = columnCount
 
-        // Recalcular ancho de items si el RecyclerView ya fue medido
         if (recyclerWidthMeasured) {
             folderAdapter.setSpanCount(columnCount)
             folderAdapter.setRecyclerWidth(binding.recyclerView.width)
@@ -156,20 +293,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Abrir selector de carpetas */
     private fun openFolderPicker() {
         val roots = getStorageRoots()
         if (roots.isEmpty()) {
-            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT)
-                .show()
+            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT).show()
             return
         }
-
         folderAdapter.submitList(roots)
         folderStack.clear()
         folderStack.addAll(roots.map { it.file })
         currentFolderFile = folderStack.first()
     }
 
+    /** Raíces de almacenamiento disponibles */
     private fun getStorageRoots(): List<FileItem> {
         val roots = mutableListOf<FileItem>()
         val primary = Environment.getExternalStorageDirectory()
@@ -185,124 +322,53 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
         return roots
     }
 
-    private fun loadFolder(
-        folder: File,
-        saveAsCurrent: Boolean = true,
-        addToStack: Boolean = true
-    ) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            var children = UriHelper.listFiles(folder)
-
-            // Ordenar carpetas y archivos por fecha más reciente primero
-            children = children.sortedWith(
-                compareByDescending<FileItem> { it.isFolder }          // Carpetas primero
-                    .thenByDescending { it.file.lastModified() }      // Más recientes primero
-            )
-
-            withContext(Dispatchers.Main) {
-                folderAdapter.submitList(children)
-            }
-        }
-
-        if (saveAsCurrent) currentFolderFile = folder
-        if (addToStack) folderStack.add(folder)
+    /** Permisos de almacenamiento */
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions.values.all { it }) openFolderPicker()
+        else Toast.makeText(this, "Permisos necesarios para acceder al almacenamiento", Toast.LENGTH_SHORT).show()
     }
-
-
-    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @SuppressLint("GestureBackNavigation")
-    override fun onBackPressed() {
-        if (folderStack.size > 1) {
-            folderStack.removeLast()
-            val previousFolder = folderStack.last()
-            loadFolder(previousFolder, saveAsCurrent = false, addToStack = false)
-        } else super.onBackPressed()
-    }
-
-    private val storagePermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            val granted = permissions.values.all { it }
-            if (!granted) Toast.makeText(this, "Permisos necesarios para acceder al almacenamiento", Toast.LENGTH_SHORT).show()
-            else openFolderPicker()
-        }
 
     private fun checkStoragePermissions() {
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                // Android 13+
-                val permissions = arrayOf(
+                val perms = arrayOf(
                     android.Manifest.permission.READ_MEDIA_IMAGES,
                     android.Manifest.permission.READ_MEDIA_VIDEO
                 )
-                val granted = permissions.all {
-                    checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                }
-
-                if (!granted) {
-                    try {
-                        storagePermissionLauncher.launch(permissions)
-                    } catch (e: Exception) {
-                        // Si no se puede lanzar (en Android TV), abrir ajustes
-                        openAppAllFilesPermission()
-                    }
-                } else {
-                    openFolderPicker()
-                }
+                if (perms.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) openFolderPicker()
+                else storagePermissionLauncher.launch(perms)
             }
 
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                // Android 11–12
-                if (!Environment.isExternalStorageManager()) {
-                    openAppAllFilesPermission()
-                } else {
-                    openFolderPicker()
-                }
+                if (!Environment.isExternalStorageManager()) openAppAllFilesPermission()
+                else openFolderPicker()
             }
 
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                // Android 6–10
-                if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-                    != android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    try {
-                        storagePermissionLauncher.launch(
-                            arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-                        )
-                    } catch (e: Exception) {
-                        openAppAllFilesPermission()
-                    }
-                } else {
-                    openFolderPicker()
-                }
+                if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
+                    storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
+                else openFolderPicker()
             }
-
-            else -> {
-                openFolderPicker()
-            }
+            else -> openFolderPicker()
         }
     }
+
     private fun openAppAllFilesPermission() {
         try {
-            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-            intent.data = Uri.parse("package:$packageName")
-            startActivity(intent)
-            Toast.makeText(
-                this,
-                "Por favor, concede el permiso de almacenamiento y vuelve a abrir la app.",
-                Toast.LENGTH_LONG
-            ).show()
-        } catch (e: Exception) {
-            try {
-                // Alternativa general si el anterior falla
-                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                startActivity(intent)
-            } catch (ex: Exception) {
-                Toast.makeText(this, "No se pudo abrir la configuración de permisos", Toast.LENGTH_SHORT).show()
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                data = Uri.parse("package:$packageName")
             }
+            startActivity(intent)
+            Toast.makeText(this, "Concede el permiso de almacenamiento y vuelve a abrir la app", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "No se pudo abrir configuración de permisos", Toast.LENGTH_SHORT).show()
         }
     }
+
+
 }

@@ -3,16 +3,38 @@
     android:padding="4dp"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:gravity="center">
+    android:gravity="center"
+    android:background="@drawable/item_background_selector"
+    android:layout_margin="8dp"
+    android:focusable="true"
+    android:focusableInTouchMode="true"
+    android:clipToOutline="false">
 
-    <ImageView
-        android:id="@+id/fileIcon"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:scaleType="centerCrop"
-        android:contentDescription="icono"/>
+    <!-- Contenedor que permite superponer el ícono de play -->
+    <FrameLayout
+        android:layout_width="180dp"
+        android:layout_height="180dp">
 
+        <ImageView
+            android:id="@+id/fileIcon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="icono" />
+
+        <!-- Ícono de play centrado -->
+        <ImageView
+            android:id="@+id/playOverlay"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_gravity="center"
+            android:src="@drawable/baseline_play_circle_24"
+            android:visibility="gone"
+            android:tint="#FFFFFF"
+            android:alpha="0.9" />
+    </FrameLayout>
+
+    <!-- Nombre del archivo -->
     <TextView
         android:id="@+id/fileName"
         android:layout_width="match_parent"
@@ -20,6 +42,9 @@
         android:gravity="center"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textSize="16sp"/>
+        android:textSize="16sp"
+        android:textColor="@android:color/white"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp" />
 
 </LinearLayout>

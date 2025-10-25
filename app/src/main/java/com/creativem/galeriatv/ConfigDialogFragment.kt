@@ -7,23 +7,22 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.fragment.app.DialogFragment
+import com.creativem.galeriatv.MainActivity
 import com.creativem.galeriatv.databinding.DialogConfigBinding
 import com.creativem.galeriatv.R
 
 class ConfigDialogFragment : DialogFragment() {
 
-    // 🔹 Interfaz para cambiar columnas
+    private var _binding: DialogConfigBinding? = null
+    private val binding get() = _binding!!
+
+    // Interfaces opcionales
     interface OnColumnChangeListener {
         fun onColumnCountSelected(columnCount: Int)
     }
-
-    // 🔹 Interfaz para cambiar carpeta predeterminada
     interface OnFolderChangeListener {
         fun onFolderSelected()
     }
-
-    private var _binding: DialogConfigBinding? = null
-    private val binding get() = _binding!!
 
     private var columnListener: OnColumnChangeListener? = null
     private var folderListener: OnFolderChangeListener? = null
@@ -51,34 +50,38 @@ class ConfigDialogFragment : DialogFragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        // 🔹 Cerrar diálogo
+        // Cerrar diálogo
         binding.btnCerrar.setOnClickListener { dismiss() }
 
-        // 🔹 Configuración de columnas
+        // Cambio de columnas
         val prefs = requireContext().getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
         val currentColumns = prefs.getInt("grid_columns", 1)
         val opciones = (1..8).map {
             if (it == currentColumns) "$it ítems por fila ✅" else "$it ítems por fila"
         }.toTypedArray()
 
-        val alertDialog = androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("Selecciona tamaño de cuadrícula")
-            .setItems(opciones) { _, index ->
-                val columnasSeleccionadas = index + 1
-                prefs.edit().putInt("grid_columns", columnasSeleccionadas).apply()
-                columnListener?.onColumnCountSelected(columnasSeleccionadas)
-                dismiss()
-            }
-            .create()
-
         binding.btnCambiarColumnas.setOnClickListener {
-            alertDialog.show()
+            androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("Selecciona tamaño de cuadrícula")
+                .setItems(opciones) { _, index ->
+                    val columnasSeleccionadas = index + 1
+                    prefs.edit().putInt("grid_columns", columnasSeleccionadas).apply()
+                    columnListener?.onColumnCountSelected(columnasSeleccionadas)
+                }
+                .show()
         }
 
-        // 🔹 Configuración de carpeta predeterminada
+        // Cambiar carpeta predeterminada
         binding.CarpetaPredeterminada.setOnClickListener {
             folderListener?.onFolderSelected()
-            dismiss() // opcional, cerrar diálogo al seleccionar
+            dismiss()
+        }
+
+        // 🔹 Botón para seleccionar reproductor de video
+        binding.selecionarReproductor.setOnClickListener {
+            (activity as? MainActivity)?.let { main ->
+                main.selectDefaultVideoPlayer()
+            }
         }
     }
 

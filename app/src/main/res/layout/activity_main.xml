@@ -24,6 +24,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Seleccionar Carpeta Predeterminada"
+            android:background="@drawable/item_background_selector"
             android:focusable="true"
             android:focusableInTouchMode="true"/>
     </LinearLayout>
@@ -35,7 +36,7 @@
         android:layout_height="65dp"
         android:layout_gravity="top|end"
         android:layout_margin="20dp"
-        android:background="@drawable/bg_floating_icon"
+        android:background="@drawable/item_background_selector"
         android:padding="12dp"
         android:focusable="true"
         android:focusableInTouchMode="true"

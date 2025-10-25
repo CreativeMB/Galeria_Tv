@@ -1,0 +1,10 @@
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Archivos internos de la app -->
+    <files-path name="internal_files" path="." />
+
+    <!-- Almacenamiento externo (DCIM, Download, etc.) -->
+    <external-path name="external_files" path="." />
+
+    <!-- Android 11+: external-files-path -->
+    <external-files-path name="external_media" path="." />
+</paths>

@@ -26,6 +26,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:focusable="true"
+        android:textColor="#FFFFFF"
+        android:background="@drawable/item_background_selector"
         android:focusableInTouchMode="true" />
 
     <!-- Botón para ordenar -->
@@ -36,16 +38,20 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:focusable="true"
+        android:textColor="#FFFFFF"
+        android:background="@drawable/item_background_selector"
         android:focusableInTouchMode="true" />
 
     <!-- Botón modo oscuro -->
     <Button
-        android:id="@+id/btnModoOscuro"
-        android:text="Modo oscuro / claro"
+        android:id="@+id/selecionarReproductor"
+        android:text="Reproductor de video predeterminado"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:focusable="true"
+        android:textColor="#FFFFFF"
+        android:background="@drawable/item_background_selector"
         android:focusableInTouchMode="true" />
 
     <!-- Espaciador flexible -->
@@ -63,6 +69,7 @@
         android:textColor="#FFFFFF"
         android:backgroundTint="#B00020"
         android:focusable="true"
+        android:background="@drawable/item_background_selector"
         android:focusableInTouchMode="true" />
 
 </LinearLayout>
