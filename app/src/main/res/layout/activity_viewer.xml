@@ -1,27 +1,60 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootContainer"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- Contenedor principal de fotos o videos -->
     <FrameLayout
         android:id="@+id/photoViewContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fabSettings"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
-        android:src="@drawable/icono"
-        android:contentDescription="Iniciar presentación" />
-
-    <ImageView
-        android:id="@+id/fabPlay"
-        android:layout_width="80dp"
+    <!-- Barra inferior semi-transparente -->
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
         android:layout_height="80dp"
-        android:layout_gravity="bottom|start"
-        android:layout_margin="16dp"
-        android:src="@drawable/icono"
-        android:contentDescription="Configuración de imagen" />
+        android:layout_gravity="bottom"
+        android:background="#59000000"
+        android:descendantFocusability="afterDescendants"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <!-- Botón Play/Pause -->
+        <ImageView
+            android:id="@+id/btnPlayPause"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:background="@drawable/item_background_selector"
+            android:contentDescription="Play/Pause"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:src="@drawable/baseline_play_circle_24" />
+
+        <!-- Nombre de archivo -->
+        <TextView
+            android:id="@+id/txtFileName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:focusable="false"
+            android:textSize="30sp"
+            android:textStyle="bold"
+            android:text="Archivo.mp4"
+            android:textColor="#FFFFFF" />
+
+
+    </LinearLayout>
+
+    <!-- Icono central de Play en video -->
+    <ImageView
+        android:id="@+id/videoCenterIcon"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:layout_gravity="center"
+        android:src="@drawable/baseline_play_circle_24"
+        android:visibility="gone" />
+
 </FrameLayout>

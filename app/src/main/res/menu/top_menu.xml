@@ -3,8 +3,8 @@
         android:id="@+id/filas"
         android:title="Filas"/>
     <item
-        android:id="@+id/home"
-        android:title="Carpeta"/>
+        android:id="@+id/diapositivas"
+        android:title="Diapositivas"/>
     <item
         android:id="@+id/carpeta2"
         android:title="Acerca de"/>

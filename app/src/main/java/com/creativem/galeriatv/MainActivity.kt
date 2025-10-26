@@ -62,22 +62,41 @@ class MainActivity : AppCompatActivity() {
                 if (isFolder) {
                     saveDefaultFolder(fileItem.file)
                 } else {
-                    Toast.makeText(this, "Selecciona una carpeta, no un archivo", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this,
+                        "Selecciona una carpeta, no un archivo",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             } else {
                 if (isFolder) {
                     loadFolder(fileItem.file)
                 } else {
                     val ext = fileItem.file.extension.lowercase()
-                    if (ext in listOf("mp4","mkv","avi","mov","wmv","flv")) {
-                        openVideo(fileItem.file.absolutePath)
+                    val parentFolder = fileItem.file.parentFile ?: return@FolderAdapter
+
+                    if (ext in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")) {
+                        // Abrir ViewerActivity con todos los videos de la carpeta
+                        ViewerActivity.start(
+                            this,
+                            Uri.fromFile(fileItem.file),
+                            parentFolder.absolutePath
+                        )
+                    } else if (ext in listOf("jpg", "jpeg", "png", "gif")) {
+                        // Abrir ViewerActivity con todas las imágenes de la carpeta
+                        ViewerActivity.start(
+                            this,
+                            Uri.fromFile(fileItem.file),
+                            parentFolder.absolutePath
+                        )
                     } else {
-                        ViewerActivity.start(this, Uri.fromFile(fileItem.file), fileItem.file.parent ?: "")
+                        Toast.makeText(this, "Formato no soportado", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
         }
     }
+
 
     private fun initRecycler() {
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
@@ -110,20 +129,22 @@ class MainActivity : AppCompatActivity() {
             val popup = androidx.appcompat.widget.PopupMenu(this, binding.imgMenu)
             popup.menuInflater.inflate(R.menu.top_menu, popup.menu)
             popup.setOnMenuItemClickListener { menuItem ->
-                when(menuItem.itemId) {
+                when (menuItem.itemId) {
                     R.id.filas -> {
                         showColumnSelectionDialog()
                         true
                     }
-                    R.id.home -> {
-//
 
+                    R.id.diapositivas -> {
+                        showImageConfigDialog()
                         true
                     }
+
                     R.id.carpeta1, R.id.carpeta2 -> {
                         Toast.makeText(this, "Galería TV v1.0", Toast.LENGTH_SHORT).show()
                         true
                     }
+
                     else -> false
                 }
             }
@@ -140,8 +161,8 @@ class MainActivity : AppCompatActivity() {
         }
 
 
-
     }
+
     private fun saveDefaultFolder(folder: File) {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -156,7 +177,6 @@ class MainActivity : AppCompatActivity() {
         selectingDefaultFolder = false
         binding.selectFolderButton.visibility = View.GONE
     }
-
 
 
     private fun showColumnSelectionDialog() {
@@ -246,7 +266,8 @@ class MainActivity : AppCompatActivity() {
     private fun openFolderPicker() {
         val roots = getStorageRoots()
         if (roots.isEmpty()) {
-            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT)
+                .show()
             return
         }
 
@@ -291,7 +312,15 @@ class MainActivity : AppCompatActivity() {
                     when {
                         it.isFolder -> 0
                         it.file.extension.lowercase() in listOf("jpg", "jpeg", "png", "gif") -> 1
-                        it.file.extension.lowercase() in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv") -> 2
+                        it.file.extension.lowercase() in listOf(
+                            "mp4",
+                            "mkv",
+                            "avi",
+                            "mov",
+                            "wmv",
+                            "flv"
+                        ) -> 2
+
                         else -> 3
                     }
                 }.thenByDescending { it.file.lastModified() }
@@ -314,12 +343,19 @@ class MainActivity : AppCompatActivity() {
     private fun getStorageRoots(): List<FileItem> {
         val roots = mutableListOf<FileItem>()
         val primary = Environment.getExternalStorageDirectory()
-        if (primary.exists() && primary.canRead()) roots.add(FileItem(primary, "Almacenamiento interno", true))
+        if (primary.exists() && primary.canRead()) roots.add(
+            FileItem(
+                primary,
+                "Almacenamiento interno",
+                true
+            )
+        )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             val sm = getSystemService(Context.STORAGE_SERVICE) as StorageManager
             sm.storageVolumes.forEach { vol ->
-                val dir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) vol.directory else null
+                val dir =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) vol.directory else null
                 if (dir != null && dir.exists() && dir.canRead() && roots.none { it.file == dir }) {
                     val name = vol.getDescription(this)
                     roots.add(FileItem(dir, name, true))
@@ -333,25 +369,35 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.all { it }) openFolderPicker()
-        else Toast.makeText(this, "Permisos necesarios para acceder al almacenamiento", Toast.LENGTH_SHORT).show()
+        else Toast.makeText(
+            this,
+            "Permisos necesarios para acceder al almacenamiento",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun checkStoragePermissions() {
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                val perms = arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES, android.Manifest.permission.READ_MEDIA_VIDEO)
+                val perms = arrayOf(
+                    android.Manifest.permission.READ_MEDIA_IMAGES,
+                    android.Manifest.permission.READ_MEDIA_VIDEO
+                )
                 if (perms.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) openFolderPicker()
                 else storagePermissionLauncher.launch(perms)
             }
+
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
                 if (!Environment.isExternalStorageManager()) openAppAllFilesPermission()
                 else openFolderPicker()
             }
+
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
                 if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
                     storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
                 else openFolderPicker()
             }
+
             else -> openFolderPicker()
         }
     }
@@ -362,9 +408,79 @@ class MainActivity : AppCompatActivity() {
                 data = Uri.parse("package:$packageName")
             }
             startActivity(intent)
-            Toast.makeText(this, "Concede el permiso de almacenamiento y vuelve a abrir la app", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "Concede el permiso de almacenamiento y vuelve a abrir la app",
+                Toast.LENGTH_LONG
+            ).show()
         } catch (e: Exception) {
-            Toast.makeText(this, "No se pudo abrir configuración de permisos", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No se pudo abrir configuración de permisos", Toast.LENGTH_SHORT)
+                .show()
         }
     }
+
+    // Método para mostrar configuración de diapositivas
+    private fun showImageConfigDialog() {
+        val intervals = (1..10).map { "$it s" }.toTypedArray()
+        val effects = ViewerActivity.SlideEffect.values().map { it.name }.toTypedArray() // TODOS los efectos
+        val selectedEffects = mutableSetOf<Int>() // índices de efectos seleccionados
+        var selectedInterval = 3 // por defecto 3 segundos
+        var randomMode = true
+
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("Configuración de diapositivas")
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_image_config, null)
+        val intervalSpinner = dialogView.findViewById<android.widget.Spinner>(R.id.spinner_interval)
+        val randomSwitch = dialogView.findViewById<android.widget.Switch>(R.id.switch_random)
+        val effectsListView = dialogView.findViewById<android.widget.ListView>(R.id.list_effects)
+
+        // Spinner de intervalos
+        intervalSpinner.adapter = android.widget.ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            intervals
+        )
+        intervalSpinner.setSelection(selectedInterval - 1)
+
+        // Lista de efectos múltiple selección
+        effectsListView.adapter = android.widget.ArrayAdapter(
+            this,
+            android.R.layout.simple_list_item_multiple_choice,
+            effects
+        )
+        effectsListView.choiceMode = android.widget.ListView.CHOICE_MODE_MULTIPLE
+
+        // Recuperar efectos previamente guardados
+        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        val savedEffects = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf()
+        effects.forEachIndexed { index, effectName ->
+            if (savedEffects.contains(effectName)) effectsListView.setItemChecked(index, true)
+        }
+        randomSwitch.isChecked = prefs.getBoolean("slide_random", true)
+        intervalSpinner.setSelection(prefs.getInt("slide_interval", 3) - 1)
+
+        builder.setView(dialogView)
+
+        builder.setPositiveButton("Aceptar") { _, _ ->
+            selectedInterval = intervalSpinner.selectedItemPosition + 1
+            selectedEffects.clear()
+            for (i in 0 until effects.size) {
+                if (effectsListView.isItemChecked(i)) selectedEffects.add(i)
+            }
+            randomMode = randomSwitch.isChecked
+
+            // Guardar configuración en SharedPreferences
+            val editor = getSharedPreferences("user_prefs", Context.MODE_PRIVATE).edit()
+            editor.putInt("slide_interval", selectedInterval)
+            editor.putBoolean("slide_random", randomMode)
+            editor.putStringSet("slide_effects", selectedEffects.map { effects[it] }.toSet())
+            editor.apply()
+        }
+
+        builder.setNegativeButton("Cancelar", null)
+        builder.show()
+    }
+
+
 }

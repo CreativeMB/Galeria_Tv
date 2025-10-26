@@ -4,12 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
@@ -20,19 +20,36 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import java.io.File
 import kotlin.math.abs
+import java.io.File
 
 class ViewerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityViewerBinding
     private var exoPlayer: ExoPlayer? = null
+    private var bottomBarVisible = false
+    private var slideRunnable: Runnable? = null
+    private var isSlideShowRunning = false
 
     private lateinit var folder: File
     private var mediaFiles: List<File> = emptyList()
     private var currentIndex = 0
 
     private lateinit var gestureDetector: GestureDetector
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Runnable para actualizar tiempo restante de video
+    private val updateTimeRunnable = object : Runnable {
+        override fun run() {
+            exoPlayer?.let { player ->
+                if (player.isPlaying) {
+                    val remainingMs = player.duration - player.currentPosition
+                    binding.txtFileName.text = formatTime(remainingMs)
+                }
+                handler.postDelayed(this, 500)
+            }
+        }
+    }
 
     companion object {
         private const val EXTRA_FILE_URI = "extra_file_uri"
@@ -61,163 +78,285 @@ class ViewerActivity : AppCompatActivity() {
         }
 
         folder = File(folderPath)
+        val selectedFile = File(Uri.parse(fileUriString).path!!)
 
+        // Cargar todos los archivos de video e imagen
         mediaFiles = folder.listFiles { f ->
             val ext = f.extension.lowercase()
-            ext in listOf("jpg", "jpeg", "png", "mp4", "mkv")
-        }?.toList() ?: emptyList()
+            ext in listOf("mp4","mkv","avi","mov","wmv","flv","jpg","jpeg","png","gif")
+        }?.sortedBy { it.name }?.toList() ?: emptyList()
 
-
-
-        val selectedFile = File(Uri.parse(fileUriString).path!!)
+        // Determinar índice del archivo seleccionado
         currentIndex = mediaFiles.indexOfFirst { it.absolutePath == selectedFile.absolutePath }
         if (currentIndex == -1) currentIndex = 0
 
-
-        // Mostrar el archivo inicial
-        showMedia(currentIndex)
-        // Configurar GestureDetector para swipes horizontales
+        // Gestos para pasar archivos con swipe
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             private val SWIPE_THRESHOLD = 100
             private val SWIPE_VELOCITY_THRESHOLD = 100
 
             override fun onFling(
-                e1: MotionEvent?,
-                e2: MotionEvent,
-                velocityX: Float,
-                velocityY: Float
+                e1: MotionEvent?, e2: MotionEvent,
+                velocityX: Float, velocityY: Float
             ): Boolean {
                 if (e1 == null || e2 == null) return false
                 val diffX = e2.x - e1.x
                 if (abs(diffX) > SWIPE_THRESHOLD && abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
-                    if (diffX > 0) nextMedia() else previousMedia()
+                    if (diffX > 0) nextMediaImage() else previousMedia()
                     return true
                 }
-
                 return false
             }
         })
 
+        binding.btnPlayPause.setOnClickListener { toggleSlideShow() }
 
         showMedia(currentIndex)
+        setupFocusHighlight()
     }
 
+    private fun setupFocusHighlight() {
+        val focusableButtons = listOf(binding.btnPlayPause)
+        focusableButtons.forEach { button ->
+            button.setBackgroundResource(R.drawable.item_background_selector)
+            button.isFocusable = true
+            button.isFocusableInTouchMode = true
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        return if (bottomBarVisible) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { binding.btnPlayPause.requestFocus(); true }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { toggleBottomBar(); true }
+                else -> super.onKeyDown(keyCode, event)
+            }
+        } else {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { nextMediaImage(); true }
+                KeyEvent.KEYCODE_DPAD_LEFT -> { previousMedia(); true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { toggleBottomBar(); true }
+                else -> super.onKeyDown(keyCode, event)
+            }
+        }
+    }
+
+    private fun toggleBottomBar() {
+        bottomBarVisible = !bottomBarVisible
+        if (bottomBarVisible) {
+            binding.bottomBar.visibility = View.VISIBLE
+            binding.btnPlayPause.isFocusable = true
+            binding.btnPlayPause.requestFocus()
+            binding.photoViewContainer.isFocusable = false
+        } else {
+            binding.bottomBar.visibility = View.GONE
+            binding.photoViewContainer.isFocusable = true
+            binding.photoViewContainer.requestFocus()
+        }
+    }
+
+    // --- Ver un archivo (video o imagen) ---
     @OptIn(UnstableApi::class)
     private fun showMedia(index: Int) {
         if (mediaFiles.isEmpty()) return
 
         val file = mediaFiles[index]
         binding.photoViewContainer.removeAllViews()
+
         exoPlayer?.release()
         exoPlayer = null
+        handler.removeCallbacks(updateTimeRunnable)
+        slideRunnable?.let { handler.removeCallbacks(it) }
+        isSlideShowRunning = false
 
-        if (file.extension.lowercase() in listOf("mp4", "mkv")) {
-            // PlayerView sin controles
-            val playerView = PlayerView(this).apply {
-                useController = false
-            }
+        binding.txtFileName.text = file.name
+
+        if (isVideo(file)) {
+            // --- VIDEO ---
+            val playerView = PlayerView(this).apply { useController = false }
             binding.photoViewContainer.addView(playerView)
 
             exoPlayer = ExoPlayer.Builder(this).build().also { player ->
                 playerView.player = player
-                val mediaItem = MediaItem.fromUri(Uri.fromFile(file))
-                player.setMediaItem(mediaItem)
+                player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
                 player.prepare()
-                player.pause() // pausado al inicio
+                player.play()
             }
 
-            // Icono de Play central
-            val playIcon = ImageView(this).apply {
-                setImageResource(R.drawable.baseline_play_circle_24)
-                layoutParams = FrameLayout.LayoutParams(200, 200).apply {
-                    gravity = android.view.Gravity.CENTER
-                }
-                visibility = View.VISIBLE
-            }
-            binding.photoViewContainer.addView(playIcon)
+            binding.videoCenterIcon.visibility = View.GONE
+            handler.post(updateTimeRunnable)
 
-            // Icono de cambio de escala (top-end)
-            val scaleIcon = ImageView(this).apply {
-                setImageResource(R.drawable.baseline_picture_in_picture_alt_24)
-                layoutParams = FrameLayout.LayoutParams(120, 120).apply {
-                    gravity = android.view.Gravity.TOP or android.view.Gravity.END
-                    topMargin = 80
-                    marginEnd = 16
-                }
-                visibility = View.VISIBLE
-            }
-            binding.photoViewContainer.addView(scaleIcon)
-
-            // Escalado
-            var scaleIndex = 0
-            val resizeModes = listOf(
-                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT,
-                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL,
-                androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            )
-
-            scaleIcon.setOnClickListener { _: View ->
-                scaleIndex = (scaleIndex + 1) % resizeModes.size
-                playerView.resizeMode = resizeModes[scaleIndex]
-            }
-
-            // Play/Pause al tocar cualquier parte del video
-            playerView.setOnClickListener { _: View ->
-                exoPlayer?.let { player ->
-                    if (player.isPlaying) {
-                        player.pause()
-                        playIcon.visibility = View.VISIBLE
-                    } else {
-                        player.play()
-                        playIcon.visibility = View.GONE
+            // Avanzar automáticamente al siguiente archivo al terminar
+            exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == ExoPlayer.STATE_ENDED) {
+                        nextMediaVideo()
                     }
                 }
-            }
-
-            // Swipe horizontal
-            playerView.setOnTouchListener { _: View, event: MotionEvent ->
-                gestureDetector.onTouchEvent(event)
-                false
-            }
+            })
 
         } else {
-            // Imagen con PhotoView
+            // --- IMAGEN ---
             val photoView = PhotoView(this)
             binding.photoViewContainer.addView(photoView)
             Glide.with(this).load(file).into(photoView)
+            binding.videoCenterIcon.visibility = View.GONE
 
-            // Swipe horizontal sobre la imagen
-            photoView.setOnTouchListener { _: View, event: MotionEvent ->
-                gestureDetector.onTouchEvent(event)
-                true
+            // Si el slideshow está activo, continuar
+            if (isSlideShowRunning) {
+                val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+                val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
+                val randomMode = prefs.getBoolean("slide_random", true)
+                val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
+                val effects = effectNames.map { SlideEffect.valueOf(it) }
+                prepareSlideShow(intervalMs, effects, randomMode)
+                slideRunnable?.let { handler.post(it) }
             }
         }
     }
 
+    // --- Slideshow ---
+    private fun prepareSlideShow(intervalMs: Long, effects: List<SlideEffect>, random: Boolean) {
+        slideRunnable?.let { handler.removeCallbacks(it) }
 
-    // Navegación con control remoto (DPAD)
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { nextMedia(); return true }
-            KeyEvent.KEYCODE_DPAD_LEFT -> { previousMedia(); return true }
+        slideRunnable = object : Runnable {
+            override fun run() {
+                nextMediaImage()
+                val currentFile = mediaFiles[currentIndex]
+
+                if (!isVideo(currentFile)) {
+                    val photoView = binding.photoViewContainer.getChildAt(0) as? PhotoView
+                        ?: PhotoView(this@ViewerActivity).also {
+                            binding.photoViewContainer.removeAllViews()
+                            binding.photoViewContainer.addView(it)
+                        }
+                    Glide.with(this@ViewerActivity).load(currentFile).into(photoView)
+                    binding.txtFileName.text = currentFile.name
+
+                    val effect = if (random) effects.random() else effects.firstOrNull() ?: SlideEffect.TRANSLATE
+                    applyEffect(photoView, effect)
+
+                    currentIndex = (currentIndex + 1) % mediaFiles.size
+                }
+
+                handler.postDelayed(this, intervalMs)
+            }
         }
-        return super.onKeyDown(keyCode, event)
     }
 
-    private fun nextMedia() {
-        if (mediaFiles.isEmpty()) return
-        currentIndex = (currentIndex + 1) % mediaFiles.size
-        showMedia(currentIndex)
+    private fun toggleSlideShow() {
+        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
+        val randomMode = prefs.getBoolean("slide_random", true)
+        val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
+        val effects = effectNames.map { SlideEffect.valueOf(it) }
+
+        if (!isSlideShowRunning) {
+            prepareSlideShow(intervalMs, effects, randomMode)
+            slideRunnable?.let { handler.post(it) }
+            isSlideShowRunning = true
+        } else {
+            slideRunnable?.let { handler.removeCallbacks(it) }
+            isSlideShowRunning = false
+        }
     }
+
+    enum class SlideEffect {
+        TRANSLATE, ZOOM, FADE, ROTATE, SCALE,
+        ROTATE_SCALE, ZOOM_FADE, TRANSLATE_FADE,
+        BOUNCE, SHADOW, FLIP_HORIZONTAL, FLIP_VERTICAL
+    }
+
+    private fun applyEffect(photoView: PhotoView, effect: SlideEffect) {
+        when(effect) {
+            SlideEffect.TRANSLATE -> photoView.animate().translationX(50f).translationY(50f).setDuration(1000)
+                .withEndAction { photoView.translationX = 0f; photoView.translationY = 0f }.start()
+            SlideEffect.ZOOM -> photoView.animate().scaleX(1.2f).scaleY(1.2f).setDuration(1000)
+                .withEndAction { photoView.scaleX = 1f; photoView.scaleY = 1f }.start()
+            SlideEffect.FADE -> photoView.animate().alpha(0f).setDuration(500)
+                .withEndAction { photoView.alpha = 1f }.start()
+            SlideEffect.ROTATE -> photoView.animate().rotationBy(360f).setDuration(1000).start()
+            SlideEffect.SCALE -> photoView.animate().scaleX(0.8f).scaleY(0.8f).setDuration(500)
+                .withEndAction { photoView.scaleX = 1f; photoView.scaleY = 1f }.start()
+            SlideEffect.ROTATE_SCALE -> photoView.animate().rotationBy(180f).scaleX(1.3f).scaleY(1.3f).setDuration(1000)
+                .withEndAction { photoView.rotation = 0f; photoView.scaleX = 1f; photoView.scaleY = 1f }.start()
+            SlideEffect.ZOOM_FADE -> photoView.animate().scaleX(1.3f).scaleY(1.3f).alpha(0f).setDuration(1000)
+                .withEndAction { photoView.scaleX = 1f; photoView.scaleY = 1f; photoView.alpha = 1f }.start()
+            SlideEffect.TRANSLATE_FADE -> photoView.animate().translationX(100f).translationY(50f).alpha(0f).setDuration(1000)
+                .withEndAction { photoView.translationX = 0f; photoView.translationY = 0f; photoView.alpha = 1f }.start()
+            SlideEffect.BOUNCE -> photoView.animate().translationY(-50f).setDuration(300)
+                .withEndAction { photoView.animate().translationY(0f).setDuration(300).start() }.start()
+            SlideEffect.SHADOW -> photoView.animate().translationZ(20f).setDuration(500)
+                .withEndAction { photoView.translationZ = 0f }.start()
+            SlideEffect.FLIP_HORIZONTAL -> photoView.animate().rotationYBy(180f).setDuration(800)
+                .withEndAction { photoView.rotationY = 0f }.start()
+            SlideEffect.FLIP_VERTICAL -> photoView.animate().rotationXBy(180f).setDuration(800)
+                .withEndAction { photoView.rotationX = 0f }.start()
+        }
+    }
+
+    private fun formatTime(ms: Long): String {
+        val totalSeconds = ms / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format("%02d:%02d", minutes, seconds)
+    }
+    private fun nextMediaVideo() {
+        if (mediaFiles.isEmpty()) return
+        exoPlayer?.release()
+        exoPlayer = null
+
+        // Avanzar al siguiente video solo si no es el último
+        var nextIndex = currentIndex + 1
+        while (nextIndex < mediaFiles.size && !isVideo(mediaFiles[nextIndex])) nextIndex++
+
+        if (nextIndex < mediaFiles.size) {
+            currentIndex = nextIndex
+            showMedia(currentIndex)
+        } else {
+            // Último video: detener
+            binding.txtFileName.text = "Último video"
+        }
+    }
+
+
+    private fun nextMediaImage() {
+        if (mediaFiles.isEmpty()) return
+        slideRunnable?.let { handler.removeCallbacks(it); isSlideShowRunning = false }
+
+        // Avanzar al siguiente imagen solo si no es el último
+        var nextIndex = currentIndex + 1
+        while (nextIndex < mediaFiles.size && isVideo(mediaFiles[nextIndex])) nextIndex++
+
+        if (nextIndex < mediaFiles.size) {
+            currentIndex = nextIndex
+            showMedia(currentIndex)
+        } else {
+            // Última imagen: detener slideshow
+            binding.txtFileName.text = "Última imagen"
+        }
+    }
+
+
 
     private fun previousMedia() {
         if (mediaFiles.isEmpty()) return
+        slideRunnable?.let { handler.removeCallbacks(it); isSlideShowRunning = false }
+        exoPlayer?.release()
+        exoPlayer = null
+
         currentIndex = if (currentIndex - 1 < 0) mediaFiles.size - 1 else currentIndex - 1
         showMedia(currentIndex)
+    }
+
+    private fun isVideo(file: File): Boolean {
+        return file.extension.lowercase() in listOf("mp4","mkv","avi","mov","wmv","flv")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         exoPlayer?.release()
+        handler.removeCallbacks(updateTimeRunnable)
+        slideRunnable?.let { handler.removeCallbacks(it) }
     }
 }

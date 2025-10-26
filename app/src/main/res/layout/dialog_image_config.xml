@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Intervalo de tiempo (s)"
+        android:textSize="16sp"
+        android:paddingBottom="4dp"/>
+
+    <Spinner
+        android:id="@+id/spinner_interval"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <Switch
+        android:id="@+id/switch_random"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Modo aleatorio"
+        android:checked="true"
+        android:layout_marginTop="8dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Selecciona efecto"
+        android:textSize="16sp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp"/>
+
+    <ListView
+        android:id="@+id/list_effects"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:divider="@android:color/darker_gray"
+        android:dividerHeight="1dp"
+        android:choiceMode="singleChoice"/>
+</LinearLayout>
