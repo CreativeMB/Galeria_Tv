@@ -16,7 +16,9 @@ class FolderAdapter(
     private val context: Context,
     private val onItemClick: (fileItem: FileItem, isFolder: Boolean) -> Unit
 ) : RecyclerView.Adapter<FolderAdapter.FolderViewHolder>() {
+    private var selectedFolder: File? = null
 
+    private val visitedFolders = mutableSetOf<String>()
     private var items: List<FileItem> = emptyList()
     private var spanCount: Int = 1
     private var itemWidth: Int = 0
@@ -52,12 +54,12 @@ class FolderAdapter(
     @RequiresApi(Build.VERSION_CODES.M)
     override fun onBindViewHolder(holder: FolderViewHolder, position: Int) {
         val item = items[position]
+
         holder.binding.fileName.text = item.name
         holder.binding.root.layoutParams.width = itemWidth
         holder.binding.root.layoutParams.height = itemWidth + dpToPx(40)
         holder.binding.root.requestLayout()
 
-        // --- Determinar qué imagen cargar ---
         val imageToLoad = if (item.isFolder) {
             val files = item.file.listFiles { f ->
                 val name = f.name.lowercase()
@@ -68,11 +70,26 @@ class FolderAdapter(
             item.file
         }
 
-        // --- Detectar si es video ---
         val extension = item.file.extension.lowercase()
         val isVideo = extension in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")
 
-        // --- Animación al enfocar (TV) ---
+        // 🔹 Determinar el fondo correcto según estado
+        fun updateBackground() {
+            holder.binding.root.background = when {
+                item.isFolder && item.file == selectedFolder -> {
+                    ContextCompat.getDrawable(context, R.drawable.item_background_selector_unvisited)
+                }
+                item.isFolder && visitedFolders.contains(item.file.absolutePath) -> {
+                    ContextCompat.getDrawable(context, R.drawable.item_background_selector_visited)
+                }
+                else -> {
+                    ContextCompat.getDrawable(context, R.drawable.item_background_selector_unvisited)
+                }
+            }
+        }
+
+        updateBackground() // aplica el fondo inicial
+
         holder.itemView.setOnFocusChangeListener { view, hasFocus ->
             if (hasFocus) {
                 view.animate().scaleX(1.12f).scaleY(1.12f).setDuration(150).start()
@@ -81,30 +98,43 @@ class FolderAdapter(
             } else {
                 view.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
                 view.elevation = 0f
-                view.background = null
+                updateBackground() // 🔹 restaurar fondo según estado real
             }
         }
 
-        // --- Cargar imagen ---
         Glide.with(context)
             .load(imageToLoad ?: R.drawable.icono)
             .centerCrop()
             .placeholder(R.drawable.icono)
             .into(holder.binding.fileIcon)
 
-        // --- Overlay de carpeta ---
         holder.binding.fileIcon.foreground = if (item.isFolder) {
             context.getDrawable(R.drawable.overlay_folder_border)
         } else null
 
-        // --- Ícono de play si es video ---
         holder.binding.playOverlay.visibility = if (isVideo) View.VISIBLE else View.GONE
 
-        // --- Click del ítem ---
         holder.binding.root.setOnClickListener {
             onItemClick(item, item.isFolder)
-        }
 
+            if (item.isFolder) {
+                markFolderAsVisited(item.file)
+                selectedFolder = item.file
+                notifyDataSetChanged() // 🔹 fuerza redraw para aplicar fondo correcto
+            }
+        }
+    }
+
+
+    // 🔹 Método público para obtener la carpeta seleccionada
+    fun getSelectedFolder(): File? {
+        return selectedFolder
+    }
+
+
+    fun markFolderAsVisited(folder: File) {
+        visitedFolders.add(folder.absolutePath)
+        notifyDataSetChanged() // fuerza redraw para que se vea el cambio
     }
 
     override fun getItemCount(): Int = items.size

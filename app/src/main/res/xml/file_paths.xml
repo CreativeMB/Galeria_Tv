@@ -1,10 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Archivos internos de la app -->
+
+    <!-- Permite acceso a todo el almacenamiento externo principal -->
+    <external-path name="external_storage_root" path="." />
+
+    <!-- Permite acceso a almacenamiento específico de la app en externo -->
+    <external-files-path name="external_files" path="." />
+
+    <!-- Opcional: si quieres permitir almacenamiento interno de la app -->
     <files-path name="internal_files" path="." />
 
-    <!-- Almacenamiento externo (DCIM, Download, etc.) -->
-    <external-path name="external_files" path="." />
-
-    <!-- Android 11+: external-files-path -->
-    <external-files-path name="external_media" path="." />
 </paths>

@@ -1,19 +1,20 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:orientation="vertical"
     android:padding="4dp"
-    android:layout_width="wrap_content"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center"
     android:background="@drawable/item_background_selector"
-    android:layout_margin="8dp"
     android:focusable="true"
     android:focusableInTouchMode="true"
-    android:clipToOutline="false">
+    android:clipToOutline="false"
+    android:layout_margin="2dp"> <!-- margen pequeño alrededor -->
 
     <!-- Contenedor que permite superponer el ícono de play -->
     <FrameLayout
-        android:layout_width="180dp"
-        android:layout_height="180dp">
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
         <ImageView
             android:id="@+id/fileIcon"

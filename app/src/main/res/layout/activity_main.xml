@@ -1,13 +1,39 @@
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- Barra superior con menú (3 punticos) -->
+    <LinearLayout
+        android:id="@+id/top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:background="#FF222222"
+        android:padding="8dp"
+        android:gravity="end"
+        android:focusable="true"
+        android:focusableInTouchMode="true">
+
+        <ImageView
+            android:id="@+id/imgMenu"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:src="@drawable/baseline_menu_24"
+            android:contentDescription="Menú"
+        android:background="@drawable/item_background_selector"
+        android:focusable="true"
+        android:focusableInTouchMode="true"/>
+    </LinearLayout>
 
     <!-- Contenedor principal -->
     <LinearLayout
-        android:orientation="vertical"
-        android:padding="16dp"
+        android:id="@+id/main_container"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerView"
@@ -15,7 +41,6 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false"
-            android:descendantFocusability="afterDescendants"
             android:focusable="true"
             android:focusableInTouchMode="true"/>
 
@@ -28,19 +53,4 @@
             android:focusable="true"
             android:focusableInTouchMode="true"/>
     </LinearLayout>
-
-    <!-- Imagen flotante de configuración (encima de todo) -->
-    <ImageView
-        android:id="@+id/imgConfig"
-        android:layout_width="65dp"
-        android:layout_height="65dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="20dp"
-        android:background="@drawable/item_background_selector"
-        android:padding="12dp"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:contentDescription="Configuración"
-        android:src="@drawable/icono"
-        android:nextFocusDown="@id/recyclerView"/>
-</FrameLayout>
+</LinearLayout>

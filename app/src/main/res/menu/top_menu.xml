@@ -1,0 +1,14 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/filas"
+        android:title="Filas"/>
+    <item
+        android:id="@+id/home"
+        android:title="Carpeta"/>
+    <item
+        android:id="@+id/carpeta2"
+        android:title="Acerca de"/>
+    <item
+        android:id="@+id/carpeta1"
+        android:title="Acerca de"/>
+</menu>
