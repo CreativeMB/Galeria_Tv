@@ -54,7 +54,6 @@ class MainActivity : AppCompatActivity() {
         checkStoragePermissions()
 
 
-
     }
 
     private fun initAdapter() {
@@ -83,10 +82,20 @@ class MainActivity : AppCompatActivity() {
     private fun initRecycler() {
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
         val columnas = prefs.getInt("grid_columns", 4)
+
         gridLayoutManager = GridLayoutManager(this, columnas)
         binding.recyclerView.layoutManager = gridLayoutManager
         binding.recyclerView.adapter = folderAdapter
 
+        // 🧩 Optimización para Android TV (sin cache persistente)
+        binding.recyclerView.apply {
+            setHasFixedSize(true)               // evita relayout innecesario
+            itemAnimator = null                 // elimina animaciones costosas
+            setItemViewCacheSize(8)             // solo mantiene pocas vistas vivas
+            recycledViewPool.setMaxRecycledViews(0, 12) // máximo 12 vistas en pool
+        }
+
+        // 🔹 Calcula el ancho para los ítems una vez medido el RecyclerView
         binding.recyclerView.post {
             val recyclerWidth = binding.recyclerView.width
             folderAdapter.setSpanCount(columnas)
@@ -94,6 +103,7 @@ class MainActivity : AppCompatActivity() {
             recyclerWidthMeasured = true
         }
     }
+
 
     private fun initMenu() {
         binding.imgMenu.setOnClickListener {

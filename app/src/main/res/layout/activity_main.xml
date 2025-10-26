@@ -17,11 +17,23 @@
         android:paddingTop="4dp"
         android:paddingBottom="4dp"
         android:gravity="end|center_vertical"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
         android:clipToPadding="false"
         android:clipChildren="false"
         android:descendantFocusability="afterDescendants">
+        <!-- Botón inferior -->
+        <Button
+            android:id="@+id/selectFolderButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Seleccionar Carpeta Predeterminada"
+            android:textColor="@android:color/white"
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp"
+            android:nextFocusUp="@id/recyclerView"
+            android:nextFocusDown="@id/recyclerView" />
 
         <!-- Icono Buscar -->
         <ImageView
@@ -129,20 +141,7 @@
             android:layout_margin="8dp"
             android:nextFocusDown="@id/selectFolderButton" />
 
-        <!-- Botón inferior -->
-        <Button
-            android:id="@+id/selectFolderButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Seleccionar Carpeta Predeterminada"
-            android:textColor="@android:color/white"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="4dp"
-            android:nextFocusUp="@id/recyclerView"
-            android:nextFocusDown="@id/recyclerView" />
+
     </LinearLayout>
 
 </LinearLayout>
