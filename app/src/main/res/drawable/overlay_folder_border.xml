@@ -11,7 +11,7 @@
     </item>
 
     <!-- Borde medio -->
-    <item android:top="4dp" android:bottom="4dp" android:left="4dp" android:right="4dp">
+    <item>
         <shape android:shape="rectangle">
             <stroke
                 android:width="6dp"
@@ -20,7 +20,7 @@
     </item>
 
     <!-- Borde interior -->
-    <item android:top="8dp" android:bottom="8dp" android:left="8dp" android:right="8dp">
+    <item>
         <shape android:shape="rectangle">
             <stroke
                 android:width="4dp"
@@ -30,13 +30,10 @@
 
     <!-- Icono de carpeta en la esquina superior derecha -->
     <item
-        android:gravity="top|end"
-        android:top="10dp"
-        android:right="8dp"
-        android:width="50dp"
-        android:height="50dp">
+        android:gravity="top|end">
         <bitmap
             android:src="@drawable/icono"
+            android:gravity="top|end"
             android:tileMode="disabled"/>
     </item>
 

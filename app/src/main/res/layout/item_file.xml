@@ -1,6 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/itemContainer"
     android:orientation="vertical"
     android:padding="6dp"
     android:layout_width="match_parent"
@@ -11,28 +9,27 @@
     android:focusableInTouchMode="true"
     android:clipChildren="false"
     android:clipToPadding="false"
-    android:layout_margin="6dp"
-    android:elevation="6dp"
-    android:stateListAnimator="@null"
-    android:descendantFocusability="blocksDescendants">
+    android:layout_margin="4dp"
+    android:foreground="?android:attr/selectableItemBackground"
+    android:elevation="4dp"
+    android:stateListAnimator="@null">
 
-    <!-- Contenedor para la imagen -->
+    <!-- Contenedor que permite superponer el ícono de play -->
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:clipChildren="false"
-        android:clipToPadding="false"
-        android:layout_gravity="center">
+        android:clipToPadding="false">
 
         <ImageView
             android:id="@+id/fileIcon"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:adjustViewBounds="true"
             android:scaleType="centerCrop"
             android:contentDescription="icono" />
 
-        <!-- Ícono de play -->
+        <!-- Ícono de play centrado -->
         <ImageView
             android:id="@+id/playOverlay"
             android:layout_width="64dp"
@@ -52,8 +49,9 @@
         android:gravity="center"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textSize="15sp"
+        android:textSize="16sp"
         android:textColor="@android:color/white"
         android:paddingTop="4dp"
         android:paddingBottom="4dp" />
+
 </LinearLayout>

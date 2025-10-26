@@ -1,17 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Estado enfocado -->
     <item android:state_focused="true">
         <shape android:shape="rectangle">
-            <solid android:color="#222244AA" />
-            <stroke android:width="4dp" android:color="#00A8FF" />
-            <corners android:radius="5dp" />
-            <padding android:left="4dp" android:top="6dp" android:right="4dp" android:bottom="6dp" />
+            <!-- Color de fondo atenuado -->
+            <solid android:color="#00897B" /> <!-- Azul claro semitransparente -->
+            <!-- Borde de enfoque -->
+            <stroke android:width="4dp" android:color="#1E88E5" />
+            <corners android:radius="4dp" />
+            <padding
+                android:left="4dp"
+                android:top="6dp"
+                android:right="4dp"
+                android:bottom="6dp" />
         </shape>
     </item>
+
+    <!-- Estado presionado -->
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#55333333" /> <!-- Fondo más oscuro al presionar -->
+            <stroke android:width="3dp" android:color="#FB8C00" />
+            <corners android:radius="4dp" />
+        </shape>
+    </item>
+
+    <!-- Estado normal -->
     <item>
         <shape android:shape="rectangle">
             <solid android:color="#111111" />
-            <corners android:radius="5dp" />
+            <corners android:radius="4dp" />
         </shape>
     </item>
+
 </selector>
