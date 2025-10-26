@@ -52,6 +52,9 @@ class MainActivity : AppCompatActivity() {
         initMenu()
         loadDefaultFolderOrPicker()
         checkStoragePermissions()
+
+
+
     }
 
     private fun initAdapter() {

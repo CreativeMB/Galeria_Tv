@@ -1,57 +1,147 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:focusable="true"
+    android:focusableInTouchMode="true">
 
-    <!-- Barra superior con menú (3 punticos) -->
+    <!-- Barra superior con 5 iconos -->
     <LinearLayout
         android:id="@+id/top_bar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="64dp"
         android:orientation="horizontal"
         android:background="#FF222222"
-        android:padding="8dp"
-        android:gravity="end"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:gravity="end|center_vertical"
         android:focusable="true"
-        android:focusableInTouchMode="true">
+        android:focusableInTouchMode="true"
+        android:clipToPadding="false"
+        android:clipChildren="false"
+        android:descendantFocusability="afterDescendants">
 
+        <!-- Icono Buscar -->
+        <ImageView
+            android:id="@+id/imgBuscar"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginVertical="4dp"
+            android:padding="8dp"
+            android:src="@drawable/icono"
+            android:contentDescription="Buscar"
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:nextFocusLeft="@id/imgMenu"
+            android:nextFocusRight="@id/imgNotificaciones"
+            android:nextFocusDown="@id/recyclerView" />
+
+        <!-- Icono Notificaciones -->
+        <ImageView
+            android:id="@+id/imgNotificaciones"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginVertical="4dp"
+            android:padding="8dp"
+            android:src="@drawable/icono"
+            android:contentDescription="Notificaciones"
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:nextFocusLeft="@id/imgBuscar"
+            android:nextFocusRight="@id/imgPerfil"
+            android:nextFocusDown="@id/recyclerView" />
+
+        <!-- Icono Perfil -->
+        <ImageView
+            android:id="@+id/imgPerfil"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginVertical="4dp"
+            android:padding="8dp"
+            android:src="@drawable/icono"
+            android:contentDescription="Perfil"
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:nextFocusLeft="@id/imgNotificaciones"
+            android:nextFocusRight="@id/imgConfig"
+            android:nextFocusDown="@id/recyclerView" />
+
+        <!-- Icono Configuración -->
+        <ImageView
+            android:id="@+id/imgConfig"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginVertical="4dp"
+            android:padding="8dp"
+            android:src="@drawable/icono"
+            android:contentDescription="Configuración"
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:nextFocusLeft="@id/imgPerfil"
+            android:nextFocusRight="@id/imgMenu"
+            android:nextFocusDown="@id/recyclerView" />
+
+        <!-- Icono Menú -->
         <ImageView
             android:id="@+id/imgMenu"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:padding="10dp"
+            android:layout_marginVertical="4dp"
+            android:padding="8dp"
             android:src="@drawable/baseline_menu_24"
             android:contentDescription="Menú"
-        android:background="@drawable/item_background_selector"
-        android:focusable="true"
-        android:focusableInTouchMode="true"/>
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:nextFocusLeft="@id/imgConfig"
+            android:nextFocusRight="@id/imgBuscar"
+            android:nextFocusDown="@id/recyclerView" />
     </LinearLayout>
 
     <!-- Contenedor principal -->
-    <LinearLayout
+    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
         android:id="@+id/main_container"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
         android:padding="10dp"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:focusable="true"
+        android:focusableInTouchMode="true">
 
+        <!-- RecyclerView principal -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerView"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
+            android:layout_gravity="center"
+            android:clipChildren="false"
             android:clipToPadding="false"
             android:focusable="true"
-            android:focusableInTouchMode="true"/>
+            android:focusableInTouchMode="true"
+            android:descendantFocusability="afterDescendants"
+            android:padding="8dp"
+            android:layout_margin="8dp"
+            android:nextFocusDown="@id/selectFolderButton" />
 
+        <!-- Botón inferior -->
         <Button
             android:id="@+id/selectFolderButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Seleccionar Carpeta Predeterminada"
+            android:textColor="@android:color/white"
             android:background="@drawable/item_background_selector"
             android:focusable="true"
-            android:focusableInTouchMode="true"/>
+            android:focusableInTouchMode="true"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp"
+            android:nextFocusUp="@id/recyclerView"
+            android:nextFocusDown="@id/recyclerView" />
     </LinearLayout>
+
 </LinearLayout>

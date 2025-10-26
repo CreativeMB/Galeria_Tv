@@ -88,6 +88,7 @@ class FolderAdapter(
             }
         }
 
+
         updateBackground() // aplica el fondo inicial
 
         holder.itemView.setOnFocusChangeListener { view, hasFocus ->
