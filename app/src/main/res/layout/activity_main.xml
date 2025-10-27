@@ -35,37 +35,6 @@
             android:nextFocusUp="@id/recyclerView"
             android:nextFocusDown="@id/recyclerView" />
 
-        <!-- Icono Buscar -->
-        <ImageView
-            android:id="@+id/imgBuscar"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginVertical="4dp"
-            android:padding="8dp"
-            android:src="@drawable/icono"
-            android:contentDescription="Buscar"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:nextFocusLeft="@id/imgMenu"
-            android:nextFocusRight="@id/imgBuscar"
-            android:nextFocusDown="@id/recyclerView" />
-
-
-        <!-- Icono Perfil -->
-        <ImageView
-            android:id="@+id/imgFilas"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginVertical="4dp"
-            android:padding="8dp"
-            android:src="@drawable/outline_ad_group_24"
-            android:contentDescription="Perfil"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:nextFocusLeft="@id/imgBuscar"
-            android:nextFocusRight="@id/imgConfig"
-            android:nextFocusDown="@id/recyclerView" />
-
         <!-- Icono Configuración -->
         <ImageView
             android:id="@+id/imgConfig"
@@ -77,7 +46,40 @@
             android:contentDescription="Configuración"
             android:background="@drawable/item_background_selector"
             android:focusable="true"
+            android:focusableInTouchMode="true"
             android:nextFocusLeft="@id/imgConfig"
+        android:nextFocusRight="@id/imgFilas"
+        android:nextFocusDown="@id/recyclerView" />
+
+        <!-- Icono Filas / Perfil -->
+        <ImageView
+            android:id="@+id/imgFilas"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginVertical="4dp"
+            android:padding="8dp"
+            android:src="@drawable/outline_ad_group_24"
+            android:contentDescription="Perfil"
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:nextFocusLeft="@id/imgConfig"
+            android:nextFocusRight="@id/imgBuscar"
+            android:nextFocusDown="@id/recyclerView" />
+
+        <!-- Icono Buscar -->
+        <ImageView
+            android:id="@+id/imgBuscar"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginVertical="4dp"
+            android:padding="8dp"
+            android:src="@drawable/icono"
+            android:contentDescription="Buscar"
+            android:background="@drawable/item_background_selector"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:nextFocusLeft="@id/imgFilas"
             android:nextFocusRight="@id/imgMenu"
             android:nextFocusDown="@id/recyclerView" />
 
@@ -93,9 +95,10 @@
             android:background="@drawable/item_background_selector"
             android:focusable="true"
             android:focusableInTouchMode="true"
-            android:nextFocusLeft="@id/imgConfig"
-            android:nextFocusRight="@id/imgBuscar"
+            android:nextFocusLeft="@id/imgBuscar"
+            android:nextFocusRight="@id/imgMenu"
             android:nextFocusDown="@id/recyclerView" />
+
     </LinearLayout>
 
     <!-- Contenedor principal -->

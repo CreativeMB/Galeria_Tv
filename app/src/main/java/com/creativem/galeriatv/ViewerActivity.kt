@@ -306,36 +306,36 @@ class ViewerActivity : AppCompatActivity() {
         exoPlayer?.release()
         exoPlayer = null
 
-        // Avanzar al siguiente video solo si no es el último
-        var nextIndex = currentIndex + 1
-        while (nextIndex < mediaFiles.size && !isVideo(mediaFiles[nextIndex])) nextIndex++
+        // Avanzar al siguiente video solo si no es el último (el más viejo)
+        var prevIndex = currentIndex - 1
+        while (prevIndex >= 0 && !isVideo(mediaFiles[prevIndex])) prevIndex--
 
-        if (nextIndex < mediaFiles.size) {
-            currentIndex = nextIndex
+        if (prevIndex >= 0) {
+            currentIndex = prevIndex
             showMedia(currentIndex)
         } else {
-            // Último video: detener
+            // Último video (más viejo): detener
             binding.txtFileName.text = "Último video"
         }
     }
-
 
     private fun nextMediaImage() {
         if (mediaFiles.isEmpty()) return
         slideRunnable?.let { handler.removeCallbacks(it); isSlideShowRunning = false }
 
-        // Avanzar al siguiente imagen solo si no es el último
-        var nextIndex = currentIndex + 1
-        while (nextIndex < mediaFiles.size && isVideo(mediaFiles[nextIndex])) nextIndex++
+        // Avanzar a la siguiente imagen solo si no es la última (la más vieja)
+        var prevIndex = currentIndex - 1
+        while (prevIndex >= 0 && isVideo(mediaFiles[prevIndex])) prevIndex--
 
-        if (nextIndex < mediaFiles.size) {
-            currentIndex = nextIndex
+        if (prevIndex >= 0) {
+            currentIndex = prevIndex
             showMedia(currentIndex)
         } else {
-            // Última imagen: detener slideshow
+            // Última imagen (más vieja): detener slideshow
             binding.txtFileName.text = "Última imagen"
         }
     }
+
 
 
 
