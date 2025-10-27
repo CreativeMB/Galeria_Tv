@@ -10,6 +10,7 @@ import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
@@ -67,7 +68,8 @@ class ViewerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
+// Evitar que la pantalla se apague mientras la app está abierta
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val fileUriString = intent.getStringExtra(EXTRA_FILE_URI)
         val folderPath = intent.getStringExtra(EXTRA_FOLDER_PATH)
 
@@ -80,15 +82,16 @@ class ViewerActivity : AppCompatActivity() {
         folder = File(folderPath)
         val selectedFile = File(Uri.parse(fileUriString).path!!)
 
-        // Cargar todos los archivos de video e imagen
         mediaFiles = folder.listFiles { f ->
+            shownImages.clear()
+            shownVideos.clear()
             val ext = f.extension.lowercase()
             ext in listOf("mp4","mkv","avi","mov","wmv","flv","jpg","jpeg","png","gif")
-        }?.sortedBy { it.name }?.toList() ?: emptyList()
-
-        // Determinar índice del archivo seleccionado
+        }?.sortedByDescending { it.lastModified() }?.toList() ?: emptyList()
         currentIndex = mediaFiles.indexOfFirst { it.absolutePath == selectedFile.absolutePath }
         if (currentIndex == -1) currentIndex = 0
+
+
 
         // Gestos para pasar archivos con swipe
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
@@ -301,42 +304,55 @@ class ViewerActivity : AppCompatActivity() {
         val seconds = totalSeconds % 60
         return String.format("%02d:%02d", minutes, seconds)
     }
+
+    // Listas para recordar los archivos ya mostrados
+    private val shownImages = mutableSetOf<File>()
+    private val shownVideos = mutableSetOf<File>()
+
     private fun nextMediaVideo() {
         if (mediaFiles.isEmpty()) return
         exoPlayer?.release()
         exoPlayer = null
 
-        // Avanzar al siguiente video solo si no es el último (el más viejo)
-        var prevIndex = currentIndex - 1
-        while (prevIndex >= 0 && !isVideo(mediaFiles[prevIndex])) prevIndex--
-
-        if (prevIndex >= 0) {
-            currentIndex = prevIndex
-            showMedia(currentIndex)
-        } else {
-            // Último video (más viejo): detener
-            binding.txtFileName.text = "Último video"
+        // Buscar el siguiente video que NO se haya mostrado aún
+        var nextIndex = currentIndex + 1
+        while (nextIndex < mediaFiles.size) {
+            val file = mediaFiles[nextIndex]
+            if (isVideo(file) && !shownVideos.contains(file)) {
+                shownVideos.add(file)
+                currentIndex = nextIndex
+                showMedia(currentIndex)
+                return
+            }
+            nextIndex++
         }
+
+        // Si no quedan más videos sin mostrar
+        binding.txtFileName.text = "Último video"
+        isSlideShowRunning = false
     }
 
     private fun nextMediaImage() {
         if (mediaFiles.isEmpty()) return
         slideRunnable?.let { handler.removeCallbacks(it); isSlideShowRunning = false }
 
-        // Avanzar a la siguiente imagen solo si no es la última (la más vieja)
-        var prevIndex = currentIndex - 1
-        while (prevIndex >= 0 && isVideo(mediaFiles[prevIndex])) prevIndex--
-
-        if (prevIndex >= 0) {
-            currentIndex = prevIndex
-            showMedia(currentIndex)
-        } else {
-            // Última imagen (más vieja): detener slideshow
-            binding.txtFileName.text = "Última imagen"
+        // Buscar la siguiente imagen que NO se haya mostrado aún
+        var nextIndex = currentIndex + 1
+        while (nextIndex < mediaFiles.size) {
+            val file = mediaFiles[nextIndex]
+            if (!isVideo(file) && !shownImages.contains(file)) {
+                shownImages.add(file)
+                currentIndex = nextIndex
+                showMedia(currentIndex)
+                return
+            }
+            nextIndex++
         }
+
+        // Si no quedan más imágenes sin mostrar
+        binding.txtFileName.text = "Última imagen"
+        isSlideShowRunning = false
     }
-
-
 
 
     private fun previousMedia() {

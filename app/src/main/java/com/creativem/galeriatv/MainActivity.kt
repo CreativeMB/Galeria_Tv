@@ -13,6 +13,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,6 +50,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Evitar que la pantalla se apague mientras la app está abierta
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Ocultar barra de notificaciones (Android 11+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.hide(WindowInsets.Type.statusBars())
@@ -389,37 +392,61 @@ class MainActivity : AppCompatActivity() {
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.all { it }) openFolderPicker()
-        else Toast.makeText(
-            this,
-            "Permisos necesarios para acceder al almacenamiento",
-            Toast.LENGTH_SHORT
-        ).show()
+        // Verifica si todos los permisos fueron concedidos
+        val allGranted = permissions.all { it.value }
+        if (allGranted) {
+            openFolderPicker()
+        } else {
+            Toast.makeText(
+                this,
+                "Se requieren permisos de almacenamiento para continuar",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun checkStoragePermissions() {
         when {
+            // ✅ Android 13 y superior (Tiramisu o más)
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
                 val perms = arrayOf(
                     android.Manifest.permission.READ_MEDIA_IMAGES,
                     android.Manifest.permission.READ_MEDIA_VIDEO
                 )
-                if (perms.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) openFolderPicker()
-                else storagePermissionLauncher.launch(perms)
+                if (perms.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
+                    openFolderPicker()
+                } else {
+                    storagePermissionLauncher.launch(perms)
+                }
             }
 
+            // ✅ Android 11 y 12 (R y S)
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
-                if (!Environment.isExternalStorageManager()) openAppAllFilesPermission()
-                else openFolderPicker()
+                if (!Environment.isExternalStorageManager()) {
+                    openAppAllFilesPermission()
+                } else {
+                    openFolderPicker()
+                }
             }
 
+            // ✅ Android 6 a 10
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
-                    storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE))
-                else openFolderPicker()
+                val readPerm = android.Manifest.permission.READ_EXTERNAL_STORAGE
+                val writePerm = android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+
+                if (checkSelfPermission(readPerm) != PackageManager.PERMISSION_GRANTED ||
+                    checkSelfPermission(writePerm) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    storagePermissionLauncher.launch(arrayOf(readPerm, writePerm))
+                } else {
+                    openFolderPicker()
+                }
             }
 
-            else -> openFolderPicker()
+            // ✅ Android 5 o menor
+            else -> {
+                openFolderPicker()
+            }
         }
     }
 
@@ -431,12 +458,21 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
             Toast.makeText(
                 this,
-                "Concede el permiso de almacenamiento y vuelve a abrir la app",
+                "Concede el permiso de acceso a todos los archivos y vuelve a abrir la app",
                 Toast.LENGTH_LONG
             ).show()
         } catch (e: Exception) {
-            Toast.makeText(this, "No se pudo abrir configuración de permisos", Toast.LENGTH_SHORT)
-                .show()
+            try {
+                // Fallback en caso de error
+                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                startActivity(intent)
+            } catch (ex: Exception) {
+                Toast.makeText(
+                    this,
+                    "No se pudo abrir la configuración de permisos",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 

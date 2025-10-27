@@ -129,19 +129,27 @@ class FolderAdapter(
 
         // Click largo
         holder.binding.root.setOnLongClickListener {
+            val position = holder.bindingAdapterPosition
+            if (position == RecyclerView.NO_POSITION) return@setOnLongClickListener true
+
+            val item = items[position]
             AlertDialog.Builder(context)
                 .setTitle("Eliminar")
                 .setMessage("¿Deseas eliminar '${item.name}' permanentemente?")
                 .setPositiveButton("Eliminar") { _, _ ->
                     if (deleteRecursive(item.file)) {
-                        items.removeAt(holder.adapterPosition)
-                        notifyItemRemoved(holder.adapterPosition)
-                    } else Toast.makeText(context, "Error al eliminar", Toast.LENGTH_SHORT).show()
+                        items.removeAt(position)
+                        notifyItemRemoved(position)
+                        Toast.makeText(context, "Archivo eliminado", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Error al eliminar archivo", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 .setNegativeButton("Cancelar", null)
                 .show()
             true
         }
+
 
         // Forzar foco en el primer item cargado
         if (focusFirstItemOnNextLoad && position == 0) {
@@ -153,11 +161,19 @@ class FolderAdapter(
     }
 
     private fun deleteRecursive(fileOrDirectory: File): Boolean {
-        if (fileOrDirectory.isDirectory) {
-            fileOrDirectory.listFiles()?.forEach { deleteRecursive(it) }
+        return try {
+            if (fileOrDirectory.isDirectory) {
+                fileOrDirectory.listFiles()?.forEach { child ->
+                    if (!deleteRecursive(child)) return false
+                }
+            }
+            fileOrDirectory.delete()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
-        return fileOrDirectory.delete()
     }
+
 
     fun getSelectedFolder(): File? = selectedFolder
 
