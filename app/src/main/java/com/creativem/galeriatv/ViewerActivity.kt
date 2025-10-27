@@ -83,8 +83,6 @@ class ViewerActivity : AppCompatActivity() {
         val selectedFile = File(Uri.parse(fileUriString).path!!)
 
         mediaFiles = folder.listFiles { f ->
-            shownImages.clear()
-            shownVideos.clear()
             val ext = f.extension.lowercase()
             ext in listOf("mp4","mkv","avi","mov","wmv","flv","jpg","jpeg","png","gif")
         }?.sortedByDescending { it.lastModified() }?.toList() ?: emptyList()
