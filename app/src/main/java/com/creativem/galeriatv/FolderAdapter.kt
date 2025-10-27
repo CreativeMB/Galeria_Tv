@@ -65,6 +65,7 @@ class FolderAdapter(
         val item = items[position]
 
         holder.binding.fileName.text = item.name
+        holder.binding.fileName.isSelected = true
         holder.binding.root.layoutParams.width = itemWidth
         holder.binding.root.layoutParams.height = itemWidth + dpToPx(40)
         holder.binding.root.requestLayout()
@@ -107,7 +108,7 @@ class FolderAdapter(
             .asBitmap()
             .load(imageToLoad ?: R.drawable.icono)
             .centerCrop()
-            .placeholder(R.drawable.icono)
+            .placeholder(R.drawable.outline_hangout_video_24)
             .override(itemWidth / 2, itemWidth / 2)
             .diskCacheStrategy(DiskCacheStrategy.NONE)
             .skipMemoryCache(true)

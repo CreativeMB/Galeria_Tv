@@ -13,7 +13,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.GestureDetector
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -21,18 +20,16 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
-import com.bumptech.glide.Glide
-import com.creativem.galeriatv.databinding.ActivityViewerBinding
-import com.github.chrisbanes.photoview.PhotoView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.BitmapImageViewTarget
+import com.creativem.galeriatv.databinding.ActivityViewerBinding
+import com.github.chrisbanes.photoview.PhotoView
 import jp.wasabeef.glide.transformations.BlurTransformation
-import kotlin.math.abs
 import java.io.File
 
 class ViewerActivity : AppCompatActivity() {
@@ -47,7 +44,6 @@ class ViewerActivity : AppCompatActivity() {
     private var mediaFiles: List<File> = emptyList()
     private var currentIndex = 0
 
-    private lateinit var gestureDetector: GestureDetector
     private val handler = Handler(Looper.getMainLooper())
 
     // Runnable para actualizar tiempo restante de video
@@ -103,27 +99,9 @@ class ViewerActivity : AppCompatActivity() {
         if (currentIndex == -1) currentIndex = 0
 
 
-
-        // Gestos para pasar archivos con swipe
-        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            private val SWIPE_THRESHOLD = 100
-            private val SWIPE_VELOCITY_THRESHOLD = 100
-
-            override fun onFling(
-                e1: MotionEvent?, e2: MotionEvent,
-                velocityX: Float, velocityY: Float
-            ): Boolean {
-                if (e1 == null || e2 == null) return false
-                val diffX = e2.x - e1.x
-                if (abs(diffX) > SWIPE_THRESHOLD && abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
-                    if (diffX > 0) nextMediaImage() else previousMedia()
-                    return true
-                }
-                return false
-            }
-        })
-
-        binding.btnPlayPause.setOnClickListener { toggleSlideShow() }
+        binding.btnPlayPause.setOnClickListener {
+            togglePlayback()
+        }
 
         showMedia(currentIndex)
         setupFocusHighlight()
@@ -169,14 +147,14 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    // --- Ver un archivo (video o imagen) ---
     @OptIn(UnstableApi::class)
     private fun showMedia(index: Int) {
         if (mediaFiles.isEmpty()) return
 
         val file = mediaFiles[index]
-        binding.photoViewContainer.removeAllViews()
 
+        // Limpiar contenedor y detener cualquier reproducción previa
+        binding.photoViewContainer.removeAllViews()
         exoPlayer?.release()
         exoPlayer = null
         handler.removeCallbacks(updateTimeRunnable)
@@ -184,6 +162,7 @@ class ViewerActivity : AppCompatActivity() {
         isSlideShowRunning = false
 
         binding.txtFileName.text = file.name
+        binding.videoCenterIcon.visibility = View.GONE
 
         if (isVideo(file)) {
             // --- VIDEO ---
@@ -197,10 +176,9 @@ class ViewerActivity : AppCompatActivity() {
                 player.play()
             }
 
-            binding.videoCenterIcon.visibility = View.GONE
+            updatePlayPauseUI(true)
             handler.post(updateTimeRunnable)
 
-            // Avanzar automáticamente al siguiente archivo al terminar
             exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == ExoPlayer.STATE_ENDED) {
@@ -211,38 +189,80 @@ class ViewerActivity : AppCompatActivity() {
 
         } else {
             // --- IMAGEN ---
-            // --- IMAGEN ---
             val photoView = PhotoView(this)
-            binding.photoViewContainer.removeAllViews()
             binding.photoViewContainer.addView(photoView)
 
-// Imagen principal
             Glide.with(this)
                 .load(file)
                 .into(photoView)
 
-// 🔹 Actualiza el fondo difuminado con la misma imagen
             updateBlurBackground(file)
 
+            // Iniciar slideshow automáticamente
+            val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+            val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
+            val randomMode = prefs.getBoolean("slide_random", true)
+            val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
+            val effects = effectNames.map { SlideEffect.valueOf(it) }
 
-            binding.videoCenterIcon.visibility = View.GONE
+            isSlideShowRunning = true
+            prepareSlideShow(intervalMs, effects, randomMode)
+            slideRunnable?.let { handler.post(it) }
 
-            if (isSlideShowRunning) {
-                val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-                val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
-                val randomMode = prefs.getBoolean("slide_random", true)
-                val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
-                val effects = effectNames.map { SlideEffect.valueOf(it) }
-
-                // Llamada correcta con los 3 argumentos
-                prepareSlideShow(intervalMs, effects, randomMode)
-
-                slideRunnable?.let { handler.post(it) }
-            }
-
-
+            updatePlayPauseUI(true)
         }
     }
+
+    private fun togglePlayback() {
+        val file = mediaFiles.getOrNull(currentIndex) ?: return
+
+        if (isVideo(file)) {
+            exoPlayer?.let { player ->
+                if (player.isPlaying) {
+                    player.pause()
+                    isSlideShowRunning = false
+                    updatePlayPauseUI(false)
+                    Toast.makeText(this, "Video pausado", Toast.LENGTH_SHORT).show()
+                } else {
+                    player.play()
+                    isSlideShowRunning = true
+                    updatePlayPauseUI(true)
+                    Toast.makeText(this, "Video reproduciéndose", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            // --- IMAGEN / SLIDESHOW ---
+            val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+            val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
+            val randomMode = prefs.getBoolean("slide_random", true)
+            val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
+            val effects = effectNames.map { SlideEffect.valueOf(it) }
+
+            if (!isSlideShowRunning) {
+                prepareSlideShow(intervalMs, effects, randomMode)
+                slideRunnable?.let { handler.post(it) }
+                isSlideShowRunning = true
+                updatePlayPauseUI(true)
+                Toast.makeText(this, "Iniciando presentación", Toast.LENGTH_SHORT).show()
+            } else {
+                slideRunnable?.let { handler.removeCallbacks(it) }
+                isSlideShowRunning = false
+                updatePlayPauseUI(false)
+                Toast.makeText(this, "Presentación detenida", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun updatePlayPauseUI(isPlaying: Boolean) {
+        binding.btnPlayPause.setImageResource(
+            if (isPlaying) android.R.drawable.ic_media_pause
+            else android.R.drawable.ic_media_play
+        )
+
+        binding.videoCenterIcon.visibility = if (isPlaying) View.GONE else View.VISIBLE
+    }
+
+
     private fun updateBlurBackground(file: File) {
         Glide.with(this)
             .asBitmap()
@@ -274,34 +294,6 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-
-    // --- Slideshow ---
-    private fun toggleSlideShow() {
-        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-        val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
-        val randomMode = prefs.getBoolean("slide_random", true)
-        val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
-        val effects = effectNames.map { SlideEffect.valueOf(it) }
-
-        if (!isSlideShowRunning) {
-            // Reiniciar registro solo si quieres empezar desde cero
-            // shownImages.clear()
-
-            prepareSlideShow(intervalMs, effects, randomMode)
-            slideRunnable?.let { handler.post(it) }
-            isSlideShowRunning = true
-            Toast.makeText(this, "Iniciando presentación", Toast.LENGTH_SHORT).show()
-            binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-        } else {
-            slideRunnable?.let { handler.removeCallbacks(it) }
-            isSlideShowRunning = false
-            Toast.makeText(this, "Presentación detenida", Toast.LENGTH_SHORT).show()
-            binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-        }
-    }
-
-    // --- Slideshow ---
-    // --- Avanza a la siguiente imagen y retorna true si encontró alguna ---
     private fun nextMediaImage(): Boolean {
         if (mediaFiles.isEmpty()) return false
 

@@ -476,12 +476,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Método para mostrar configuración de diapositivas
     private fun showImageConfigDialog() {
         val intervals = (1..10).map { "$it s" }.toTypedArray()
-        val effects = ViewerActivity.SlideEffect.values().map { it.name }.toTypedArray() // TODOS los efectos
-        val selectedEffects = mutableSetOf<Int>() // índices de efectos seleccionados
-        var selectedInterval = 3 // por defecto 3 segundos
+        val effects = ViewerActivity.SlideEffect.values().map { it.name }.toTypedArray()
+        val defaultEffect = "TRANSLATE" // efecto obligatorio
+        val selectedEffects = mutableSetOf<Int>() // índices seleccionados
+        var selectedInterval = 3
         var randomMode = true
 
         val builder = AlertDialog.Builder(this)
@@ -500,7 +500,7 @@ class MainActivity : AppCompatActivity() {
         )
         intervalSpinner.setSelection(selectedInterval - 1)
 
-        // Lista de efectos múltiple selección
+        // Lista de efectos con multiple choice
         effectsListView.adapter = android.widget.ArrayAdapter(
             this,
             android.R.layout.simple_list_item_multiple_choice,
@@ -508,12 +508,21 @@ class MainActivity : AppCompatActivity() {
         )
         effectsListView.choiceMode = android.widget.ListView.CHOICE_MODE_MULTIPLE
 
-        // Recuperar efectos previamente guardados
+        // Recuperar efectos guardados
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-        val savedEffects = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf()
+        val savedEffects = prefs.getStringSet("slide_effects", setOf(defaultEffect)) ?: setOf(defaultEffect)
+
         effects.forEachIndexed { index, effectName ->
             if (savedEffects.contains(effectName)) effectsListView.setItemChecked(index, true)
         }
+
+        // Evitar desmarcar el efecto por defecto
+        effectsListView.setOnItemClickListener { _, _, position, _ ->
+            if (effects[position] == defaultEffect) {
+                effectsListView.setItemChecked(position, true)
+            }
+        }
+
         randomSwitch.isChecked = prefs.getBoolean("slide_random", true)
         intervalSpinner.setSelection(prefs.getInt("slide_interval", 3) - 1)
 
@@ -527,7 +536,7 @@ class MainActivity : AppCompatActivity() {
             }
             randomMode = randomSwitch.isChecked
 
-            // Guardar configuración en SharedPreferences
+            // Guardar configuración
             val editor = getSharedPreferences("user_prefs", Context.MODE_PRIVATE).edit()
             editor.putInt("slide_interval", selectedInterval)
             editor.putBoolean("slide_random", randomMode)
@@ -538,6 +547,7 @@ class MainActivity : AppCompatActivity() {
         builder.setNegativeButton("Cancelar", null)
         builder.show()
     }
+
 
 
 }

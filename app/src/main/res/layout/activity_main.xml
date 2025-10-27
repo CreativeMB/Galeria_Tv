@@ -2,6 +2,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
+    android:background="#545454"
     android:focusable="true"
     android:focusableInTouchMode="true">
 
@@ -97,7 +98,7 @@
             android:layout_gravity="center"
             android:clipChildren="false"
             android:clipToPadding="false"
-            android:background="@color/blanco"
+            android:background="#545454"
             android:padding="8dp"
             android:layout_margin="8dp" />
 
