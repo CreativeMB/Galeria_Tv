@@ -4,7 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="Galeria_Tv">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-10-27T00:42:28.576565300Z">
+        <DropdownSelection timestamp="2025-10-27T17:55:11.329666900Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="PhysicalDevice" identifier="serial=ZY22LGXKKM" />
