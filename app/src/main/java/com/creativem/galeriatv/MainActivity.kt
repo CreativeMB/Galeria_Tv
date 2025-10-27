@@ -148,18 +148,13 @@ class MainActivity : AppCompatActivity() {
             popup.menuInflater.inflate(R.menu.top_menu, popup.menu)
             popup.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.itemId) {
-                    R.id.filas -> {
-//                        showColumnSelectionDialog()
+                    R.id.info -> {
+                        mostrarInfoApp()
                         true
                     }
 
-                    R.id.diapositivas -> {
-//                        showImageConfigDialog()
-                        true
-                    }
-
-                    R.id.carpeta1, R.id.carpeta2 -> {
-
+                    R.id.proyectos -> {
+                        abrirPaginaProyectos()
                         true
                     }
 
@@ -546,6 +541,43 @@ class MainActivity : AppCompatActivity() {
 
         builder.setNegativeButton("Cancelar", null)
         builder.show()
+    }
+    private fun mostrarInfoApp() {
+        val builder = AlertDialog.Builder(this)
+        builder.setTitle("📺 Galería TV")
+        builder.setMessage(
+            """
+        Bienvenido a Galería TV
+        
+        Un explorador de archivos diseñado especialmente para Android TV. 
+        Con esta aplicación puedes visualizar y reproducir fácilmente tus fotos y videos, 
+        disfrutando de transiciones fluidas y elegantes al estilo de diapositivas animadas.
+        
+        ✨ Características principales:
+        • Seleciona su carpeta de raiz para que siempre busque el contenido.
+        • Reproduce imágenes y videos directamente desde tus carpetas.  
+        • Navegación optimizada para control remoto de TV.  
+        • Animaciones suaves y modernas entre fotos.  
+        • Experiencia rápida, eficiente y sin complicaciones.
+        
+        📦 Versión: 1.0  
+        © Todos los derechos reservados  
+        👨‍💻 Desarrollado por Tobias Martínez  
+        📍 Colombia  
+        📞 WhatsApp: +57 315 072 5566
+        """.trimIndent()
+        )
+        builder.setPositiveButton("Entendido") { dialog, _ ->
+            dialog.dismiss()
+        }
+        builder.setCancelable(true)
+        builder.show()
+    }
+
+    private fun abrirPaginaProyectos() {
+        val url = "https://creativem.carrd.co/" // 🔗 cambia por tu enlace real
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        startActivity(intent)
     }
 
 

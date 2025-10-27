@@ -1,14 +1,9 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
-        android:id="@+id/filas"
-        android:title="Prueva"/>
+        android:id="@+id/info"
+        android:title="Nosotros"/>
     <item
-        android:id="@+id/diapositivas"
-        android:title="Prueva"/>
-    <item
-        android:id="@+id/carpeta2"
-        android:title="Prueva"/>
-    <item
-        android:id="@+id/carpeta1"
-        android:title="Prueva"/>
+        android:id="@+id/proyectos"
+        android:title="Proyectos"/>
+
 </menu>
