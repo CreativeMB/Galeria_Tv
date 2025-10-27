@@ -47,36 +47,22 @@
             android:background="@drawable/item_background_selector"
             android:focusable="true"
             android:nextFocusLeft="@id/imgMenu"
-            android:nextFocusRight="@id/imgNotificaciones"
+            android:nextFocusRight="@id/imgBuscar"
             android:nextFocusDown="@id/recyclerView" />
 
-        <!-- Icono Notificaciones -->
-        <ImageView
-            android:id="@+id/imgNotificaciones"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginVertical="4dp"
-            android:padding="8dp"
-            android:src="@drawable/icono"
-            android:contentDescription="Notificaciones"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:nextFocusLeft="@id/imgBuscar"
-            android:nextFocusRight="@id/imgPerfil"
-            android:nextFocusDown="@id/recyclerView" />
 
         <!-- Icono Perfil -->
         <ImageView
-            android:id="@+id/imgPerfil"
+            android:id="@+id/imgFilas"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_marginVertical="4dp"
             android:padding="8dp"
-            android:src="@drawable/icono"
+            android:src="@drawable/outline_ad_group_24"
             android:contentDescription="Perfil"
             android:background="@drawable/item_background_selector"
             android:focusable="true"
-            android:nextFocusLeft="@id/imgNotificaciones"
+            android:nextFocusLeft="@id/imgBuscar"
             android:nextFocusRight="@id/imgConfig"
             android:nextFocusDown="@id/recyclerView" />
 
@@ -87,11 +73,11 @@
             android:layout_height="48dp"
             android:layout_marginVertical="4dp"
             android:padding="8dp"
-            android:src="@drawable/icono"
+            android:src="@drawable/outline_animated_images_24"
             android:contentDescription="Configuración"
             android:background="@drawable/item_background_selector"
             android:focusable="true"
-            android:nextFocusLeft="@id/imgPerfil"
+            android:nextFocusLeft="@id/imgConfig"
             android:nextFocusRight="@id/imgMenu"
             android:nextFocusDown="@id/recyclerView" />
 

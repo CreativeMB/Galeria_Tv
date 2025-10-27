@@ -11,6 +11,8 @@ import android.os.storage.StorageManager
 import android.provider.Settings
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +48,19 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Ocultar barra de notificaciones (Android 11+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.hide(WindowInsets.Type.statusBars())
+            window.insetsController?.systemBarsBehavior =
+                WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            // Para versiones anteriores a Android 11
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN
+            actionBar?.hide()
+        }
+
+
 
         initAdapter()
         initRecycler()
@@ -131,17 +146,17 @@ class MainActivity : AppCompatActivity() {
             popup.setOnMenuItemClickListener { menuItem ->
                 when (menuItem.itemId) {
                     R.id.filas -> {
-                        showColumnSelectionDialog()
+//                        showColumnSelectionDialog()
                         true
                     }
 
                     R.id.diapositivas -> {
-                        showImageConfigDialog()
+//                        showImageConfigDialog()
                         true
                     }
 
                     R.id.carpeta1, R.id.carpeta2 -> {
-                        Toast.makeText(this, "Galería TV v1.0", Toast.LENGTH_SHORT).show()
+
                         true
                     }
 
@@ -158,6 +173,12 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "Primero selecciona una carpeta", Toast.LENGTH_SHORT).show()
             }
+        }
+        binding.imgConfig.setOnClickListener {
+            showImageConfigDialog()
+        }
+        binding.imgFilas.setOnClickListener {
+            showColumnSelectionDialog()
         }
 
 
