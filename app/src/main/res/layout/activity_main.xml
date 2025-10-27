@@ -20,7 +20,8 @@
         android:clipToPadding="false"
         android:clipChildren="false"
         android:descendantFocusability="afterDescendants">
-        <!-- Botón inferior -->
+
+        <!-- Botón seleccionar carpeta -->
         <Button
             android:id="@+id/selectFolderButton"
             android:layout_width="wrap_content"
@@ -28,12 +29,8 @@
             android:text="Seleccionar Carpeta Predeterminada"
             android:textColor="@android:color/white"
             android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
             android:layout_marginTop="8dp"
-            android:layout_marginBottom="4dp"
-            android:nextFocusUp="@id/recyclerView"
-            android:nextFocusDown="@id/recyclerView" />
+            android:layout_marginBottom="4dp" />
 
         <!-- Icono Configuración -->
         <ImageView
@@ -44,12 +41,7 @@
             android:padding="8dp"
             android:src="@drawable/outline_animated_images_24"
             android:contentDescription="Configuración"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:nextFocusLeft="@id/imgConfig"
-        android:nextFocusRight="@id/imgFilas"
-        android:nextFocusDown="@id/recyclerView" />
+            android:background="@drawable/item_background_selector" />
 
         <!-- Icono Filas / Perfil -->
         <ImageView
@@ -60,12 +52,7 @@
             android:padding="8dp"
             android:src="@drawable/outline_ad_group_24"
             android:contentDescription="Perfil"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:nextFocusLeft="@id/imgConfig"
-            android:nextFocusRight="@id/imgBuscar"
-            android:nextFocusDown="@id/recyclerView" />
+            android:background="@drawable/item_background_selector" />
 
         <!-- Icono Buscar -->
         <ImageView
@@ -76,12 +63,7 @@
             android:padding="8dp"
             android:src="@drawable/icono"
             android:contentDescription="Buscar"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:nextFocusLeft="@id/imgFilas"
-            android:nextFocusRight="@id/imgMenu"
-            android:nextFocusDown="@id/recyclerView" />
+            android:background="@drawable/item_background_selector" />
 
         <!-- Icono Menú -->
         <ImageView
@@ -92,26 +74,19 @@
             android:padding="8dp"
             android:src="@drawable/baseline_menu_24"
             android:contentDescription="Menú"
-            android:background="@drawable/item_background_selector"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:nextFocusLeft="@id/imgBuscar"
-            android:nextFocusRight="@id/imgMenu"
-            android:nextFocusDown="@id/recyclerView" />
+            android:background="@drawable/item_background_selector" />
 
     </LinearLayout>
 
     <!-- Contenedor principal -->
-    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    <LinearLayout
         android:id="@+id/main_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="2dp"
         android:clipChildren="false"
-        android:clipToPadding="false"
-        android:focusable="true"
-        android:focusableInTouchMode="true">
+        android:clipToPadding="false">
 
         <!-- RecyclerView principal -->
         <androidx.recyclerview.widget.RecyclerView
@@ -123,13 +98,8 @@
             android:clipChildren="false"
             android:clipToPadding="false"
             android:background="@color/blanco"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:descendantFocusability="afterDescendants"
             android:padding="8dp"
-            android:layout_margin="8dp"
-            android:nextFocusDown="@id/selectFolderButton" />
-
+            android:layout_margin="8dp" />
 
     </LinearLayout>
 

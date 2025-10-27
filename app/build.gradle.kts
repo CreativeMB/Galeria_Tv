@@ -72,6 +72,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.github.chrisbanes:PhotoView:2.3.0")
     implementation("com.google.android.material:material:1.11.0")
+    implementation("jp.wasabeef:glide-transformations:4.3.0")
 
 
 }

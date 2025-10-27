@@ -2,7 +2,12 @@ package com.creativem.galeriatv
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -12,6 +17,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
@@ -22,6 +28,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.request.RequestOptions
+import com.bumptech.glide.request.target.BitmapImageViewTarget
+import jp.wasabeef.glide.transformations.BlurTransformation
 import kotlin.math.abs
 import java.io.File
 
@@ -201,9 +211,20 @@ class ViewerActivity : AppCompatActivity() {
 
         } else {
             // --- IMAGEN ---
+            // --- IMAGEN ---
             val photoView = PhotoView(this)
+            binding.photoViewContainer.removeAllViews()
             binding.photoViewContainer.addView(photoView)
-            Glide.with(this).load(file).into(photoView)
+
+// Imagen principal
+            Glide.with(this)
+                .load(file)
+                .into(photoView)
+
+// 🔹 Actualiza el fondo difuminado con la misma imagen
+            updateBlurBackground(file)
+
+
             binding.videoCenterIcon.visibility = View.GONE
 
             if (isSlideShowRunning) {
@@ -222,6 +243,37 @@ class ViewerActivity : AppCompatActivity() {
 
         }
     }
+    private fun updateBlurBackground(file: File) {
+        Glide.with(this)
+            .asBitmap()
+            .load(file)
+            .diskCacheStrategy(DiskCacheStrategy.NONE)
+            .skipMemoryCache(true)
+            .into(object : BitmapImageViewTarget(binding.blurBackground) {
+                override fun setResource(resource: Bitmap?) {
+                    super.setResource(resource)
+                    resource?.let {
+                        applyBlur(binding.blurBackground, it)
+                    }
+                }
+            })
+    }
+
+
+    private fun applyBlur(imageView: ImageView, bitmap: Bitmap) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val drawable = BitmapDrawable(imageView.resources, bitmap)
+            imageView.setImageDrawable(drawable)
+            val blurEffect = RenderEffect.createBlurEffect(60f, 60f, Shader.TileMode.CLAMP)
+            imageView.setRenderEffect(blurEffect)
+        } else {
+            Glide.with(imageView.context)
+                .load(bitmap)
+                .transform(BlurTransformation(25, 3))
+                .into(imageView)
+        }
+    }
+
 
     // --- Slideshow ---
     private fun toggleSlideShow() {
@@ -302,7 +354,8 @@ class ViewerActivity : AppCompatActivity() {
                 binding.photoViewContainer.addView(newPhoto)
                 newPhoto.alpha = 0f
                 Glide.with(this@ViewerActivity).load(currentFile).into(newPhoto)
-
+// 🔹 Actualizar el fondo difuminado
+                updateBlurBackground(currentFile)
                 // Animar el desvanecimiento
                 oldPhoto?.animate()?.alpha(0f)?.setDuration(800)?.withEndAction {
                     binding.photoViewContainer.removeView(oldPhoto)
@@ -511,27 +564,6 @@ class ViewerActivity : AppCompatActivity() {
         isSlideShowRunning = false
     }
 
-//    private fun nextMediaImage() {
-//        if (mediaFiles.isEmpty()) return
-//        slideRunnable?.let { handler.removeCallbacks(it); isSlideShowRunning = false }
-//
-//        // Buscar la siguiente imagen que NO se haya mostrado aún
-//        var nextIndex = currentIndex + 1
-//        while (nextIndex < mediaFiles.size) {
-//            val file = mediaFiles[nextIndex]
-//            if (!isVideo(file) && !shownImages.contains(file)) {
-//                shownImages.add(file)
-//                currentIndex = nextIndex
-//                showMedia(currentIndex)
-//                return
-//            }
-//            nextIndex++
-//        }
-//
-//        // Si no quedan más imágenes sin mostrar
-//        binding.txtFileName.text = "Última imagen"
-//        isSlideShowRunning = false
-//    }
 
 
     private fun previousMedia() {

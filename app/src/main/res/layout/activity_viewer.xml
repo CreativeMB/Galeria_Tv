@@ -1,54 +1,57 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootContainer"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:clipChildren="false"
+    android:clipToPadding="false">
 
-    <!-- Contenedor principal de fotos o videos -->
+    <!-- 🔹 Fondo difuminado -->
+    <ImageView
+        android:id="@+id/blurBackground"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:contentDescription="Fondo difuminado" />
+
+    <!-- 🔹 Contenedor principal de fotos o videos -->
     <FrameLayout
         android:id="@+id/photoViewContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:clipToPadding="false" />
 
-    <!-- Barra inferior semi-transparente -->
+    <!-- 🔹 Barra inferior -->
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="match_parent"
         android:layout_height="80dp"
         android:layout_gravity="bottom"
         android:background="#59000000"
-        android:descendantFocusability="afterDescendants"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:gravity="center"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:gravity="center">
 
-        <!-- Botón Play/Pause -->
         <ImageView
             android:id="@+id/btnPlayPause"
             android:layout_width="80dp"
             android:layout_height="80dp"
             android:background="@drawable/item_background_selector"
-            android:contentDescription="Play/Pause"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:src="@drawable/baseline_play_circle_24" />
+            android:src="@drawable/baseline_play_circle_24"
+            android:contentDescription="Play/Pause" />
 
-        <!-- Nombre de archivo -->
         <TextView
             android:id="@+id/txtFileName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
-            android:focusable="false"
-            android:textSize="30sp"
-            android:textStyle="bold"
             android:text="Archivo.mp4"
-            android:textColor="#FFFFFF" />
-
+            android:textColor="#FFFFFF"
+            android:textSize="30sp"
+            android:textStyle="bold" />
 
     </LinearLayout>
 
-    <!-- Icono central de Play en video -->
+    <!-- 🔹 Icono central de play -->
     <ImageView
         android:id="@+id/videoCenterIcon"
         android:layout_width="100dp"
