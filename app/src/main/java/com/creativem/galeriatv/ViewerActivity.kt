@@ -194,6 +194,7 @@ class ViewerActivity : AppCompatActivity() {
         binding.btnPlayPause.isFocusableInTouchMode = true
     }
 
+    @UnstableApi
     @OptIn(UnstableApi::class)
     private fun showMedia(index: Int) {
         if (mediaFiles.isEmpty()) return
@@ -211,7 +212,6 @@ class ViewerActivity : AppCompatActivity() {
         // Cancelar tareas de slideshow pendientes (evitar acumulación)
         cancelSlideRunnable()
 
-        binding.txtFileName.text = file.name
         binding.videoCenterIcon.visibility = View.GONE
 
         if (isVideo(file)) {
@@ -499,21 +499,28 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        // navegación simplificada y adaptada a TV
         return when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { advanceOrNext(); true }
-            KeyEvent.KEYCODE_DPAD_LEFT -> { previousMedia(); true }
-            KeyEvent.KEYCODE_DPAD_DOWN -> { toggleBottomBar(); true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                hideBottomBarIfVisible()
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                previousMedia()
+                hideBottomBarIfVisible()
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER -> {
+                toggleBottomBar()
+                true
+            }
             else -> super.onKeyDown(keyCode, event)
         }
     }
 
-    private fun advanceOrNext() {
-        // si es imagen y slideshow no corriendo: avanzar imagen; si es video: avanzar video
-        val f = mediaFiles.getOrNull(currentIndex) ?: return
-        if (isVideo(f)) nextMediaVideo() else {
-            advanceToNextImage()
-            showMedia(currentIndex)
+    // Método auxiliar para ocultar bottomBar si está visible
+    private fun hideBottomBarIfVisible() {
+        if (binding.bottomBar.visibility == View.VISIBLE) {
+            binding.bottomBar.visibility = View.GONE
         }
     }
 
