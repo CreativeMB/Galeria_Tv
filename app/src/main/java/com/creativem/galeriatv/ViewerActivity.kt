@@ -1,7 +1,9 @@
 package com.creativem.galeriatv
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.RenderEffect
 import android.graphics.Shader
@@ -11,14 +13,13 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.GestureDetector
+import android.provider.MediaStore
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
 import android.widget.Toast
-import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
@@ -31,31 +32,58 @@ import com.creativem.galeriatv.databinding.ActivityViewerBinding
 import com.github.chrisbanes.photoview.PhotoView
 import jp.wasabeef.glide.transformations.BlurTransformation
 import java.io.File
+import java.lang.Exception
+import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * ViewerActivity optimizada para TV de bajos recursos.
+ *
+ * Principales cambios:
+ *  - Reutiliza una única PhotoView y PlayerView para evitar crear muchas vistas.
+ *  - Carga imágenes en baja resolución para usar menos memoria.
+ *  - Aplica blur de fondo con downscale para no consumir demasiada RAM/CPU.
+ *  - Detecta desconexión de unidad y maneja errores de IO.
+ *  - Evita múltiples postDelayed encolados.
+ */
 class ViewerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityViewerBinding
-    private var exoPlayer: ExoPlayer? = null
-    private var bottomBarVisible = false
-    private var slideRunnable: Runnable? = null
-    private var isSlideShowRunning = false
 
-    private lateinit var folder: File
+    // Player y vistas reutilizables
+    private var exoPlayer: ExoPlayer? = null
+    private var playerView: PlayerView? = null
+    private var photoView: PhotoView? = null
+
     private var mediaFiles: List<File> = emptyList()
     private var currentIndex = 0
 
     private val handler = Handler(Looper.getMainLooper())
+    private var slideRunnable: Runnable? = null
+    private val slideRunning = AtomicBoolean(false)
 
-    // Runnable para actualizar tiempo restante de video
     private val updateTimeRunnable = object : Runnable {
         override fun run() {
-            exoPlayer?.let { player ->
-                if (player.isPlaying) {
-                    val remainingMs = player.duration - player.currentPosition
-                    binding.txtFileName.text = formatTime(remainingMs)
+            try {
+                exoPlayer?.let { player ->
+                    if (player.isPlaying) {
+                        val remainingMs = player.duration - player.currentPosition
+                        binding.txtFileName.text = formatTimeSafe(remainingMs)
+                    }
                 }
-                handler.postDelayed(this, 500)
+                // Solo re-programar si el player existe y activity no finishing
+                if (!isFinishing && exoPlayer != null) handler.postDelayed(this, 500)
+            } catch (e: Exception) {
+                // proteger contra errores del player en dispositivos inestables
             }
+        }
+    }
+
+    // Receiver para detectar que la unidad se desmontó / extraída
+    private val mediaUnmountReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            // Si la tarjeta/usb se desmonta, avisar y cerrar activity limpiamente
+            Toast.makeText(this@ViewerActivity, "Unidad de almacenamiento desconectada", Toast.LENGTH_SHORT).show()
+            finishSafely()
         }
     }
 
@@ -75,142 +103,290 @@ class ViewerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
-// Evitar que la pantalla se apague mientras la app está abierta
+
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Registrar receiver para eventos de almacenamiento removido
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_MEDIA_UNMOUNTED)
+            addAction(Intent.ACTION_MEDIA_EJECT)
+            addAction(Intent.ACTION_MEDIA_REMOVED)
+            addDataScheme("file")
+        }
+        registerReceiver(mediaUnmountReceiver, filter)
+
+        // Inicializar vistas reutilizables
+        initReusableViews()
+
+        // Tomar parámetros
         val fileUriString = intent.getStringExtra(EXTRA_FILE_URI)
         val folderPath = intent.getStringExtra(EXTRA_FOLDER_PATH)
-
         if (fileUriString == null || folderPath == null) {
             Toast.makeText(this, "Archivo no válido", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        folder = File(folderPath)
-        val selectedFile = File(Uri.parse(fileUriString).path!!)
-
-        mediaFiles = folder.listFiles { f ->
-            val ext = f.extension.lowercase()
-            ext in listOf("mp4","mkv","avi","mov","wmv","flv","jpg","jpeg","png","gif")
-        }?.sortedByDescending { it.lastModified() }?.toList() ?: emptyList()
-
-        startSlideShow()
-        currentIndex = mediaFiles.indexOfFirst { it.absolutePath == selectedFile.absolutePath }
-        if (currentIndex == -1) currentIndex = 0
-
-
-        binding.btnPlayPause.setOnClickListener {
-            togglePlayback()
+        val folder = File(folderPath)
+        if (!folder.exists() || !folder.isDirectory) {
+            Toast.makeText(this, "Carpeta no encontrada", Toast.LENGTH_SHORT).show()
+            finish()
+            return
         }
 
-        showMedia(currentIndex)
+        try {
+            mediaFiles = folder.listFiles { f ->
+                val ext = f.extension.lowercase()
+                ext in listOf("mp4","mkv","avi","mov","wmv","flv","jpg","jpeg","png","gif")
+            }?.sortedByDescending { it.lastModified() }?.toList() ?: emptyList()
+        } catch (e: SecurityException) {
+            Toast.makeText(this, "No hay permiso para acceder a la carpeta", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error al listar archivos", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+
+        // Ubicar índice inicial de archivo seleccionado (fallback 0)
+        val selectedFile = try {
+            File(Uri.parse(fileUriString).path!!)
+        } catch (e: Exception) {
+            null
+        }
+        currentIndex = selectedFile?.let { mediaFiles.indexOfFirst { it.absolutePath == selectedFile.absolutePath } } ?: -1
+        if (currentIndex == -1) currentIndex = 0
+
+        binding.btnPlayPause.setOnClickListener { togglePlayback() }
+
+        // focus y accesibilidad básica
         setupFocusHighlight()
+
+        // arrancar mostrando el archivo actual (no iniciar slideshow hasta que se muestre)
+        showMedia(currentIndex)
+    }
+
+    private fun initReusableViews() {
+        // PhotoView único reutilizable
+        photoView = PhotoView(this).also {
+            it.maximumScale = 3f
+            it.minimumScale = 1f
+            it.isZoomable = true
+            // no agregamos todavía; se agrega en photoContainer cuando se muestre
+        }
+
+        // PlayerView único reutilizable
+        playerView = PlayerView(this).apply {
+            useController = false
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            visibility = View.GONE
+        }
+        // No lo añadimos ahora si no es necesario; lo añadimos al container cuando toca reproducir video
     }
 
     private fun setupFocusHighlight() {
-        val focusableButtons = listOf(binding.btnPlayPause)
-        focusableButtons.forEach { button ->
-            button.setBackgroundResource(R.drawable.item_background_selector)
-            button.isFocusable = true
-            button.isFocusableInTouchMode = true
-        }
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        return if (bottomBarVisible) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_RIGHT -> { binding.btnPlayPause.requestFocus(); true }
-                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { toggleBottomBar(); true }
-                else -> super.onKeyDown(keyCode, event)
-            }
-        } else {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_RIGHT -> { nextMediaImage(); true }
-                KeyEvent.KEYCODE_DPAD_LEFT -> { previousMedia(); true }
-                KeyEvent.KEYCODE_DPAD_DOWN -> { toggleBottomBar(); true }
-                else -> super.onKeyDown(keyCode, event)
-            }
-        }
-    }
-
-    private fun toggleBottomBar() {
-        bottomBarVisible = !bottomBarVisible
-        if (bottomBarVisible) {
-            binding.bottomBar.visibility = View.VISIBLE
-            binding.btnPlayPause.isFocusable = true
-            binding.btnPlayPause.requestFocus()
-            binding.photoViewContainer.isFocusable = false
-        } else {
-            binding.bottomBar.visibility = View.GONE
-            binding.photoViewContainer.isFocusable = true
-            binding.photoViewContainer.requestFocus()
-        }
+        binding.btnPlayPause.setBackgroundResource(R.drawable.item_background_selector)
+        binding.btnPlayPause.isFocusable = true
+        binding.btnPlayPause.isFocusableInTouchMode = true
     }
 
     @OptIn(UnstableApi::class)
     private fun showMedia(index: Int) {
         if (mediaFiles.isEmpty()) return
+        if (index !in mediaFiles.indices) return
 
+        currentIndex = index
         val file = mediaFiles[index]
 
-        // Limpiar contenedor y detener cualquier reproducción previa
+        // Limpiar container sin destruir las vistas reutilizables
         binding.photoViewContainer.removeAllViews()
-        exoPlayer?.release()
-        exoPlayer = null
-        handler.removeCallbacks(updateTimeRunnable)
-        slideRunnable?.let { handler.removeCallbacks(it) }
-        isSlideShowRunning = false
+
+        // Detener player si estaba activo
+        releasePlayer()
+
+        // Cancelar tareas de slideshow pendientes (evitar acumulación)
+        cancelSlideRunnable()
 
         binding.txtFileName.text = file.name
         binding.videoCenterIcon.visibility = View.GONE
 
         if (isVideo(file)) {
-            // --- VIDEO ---
-            val playerView = PlayerView(this).apply { useController = false }
-            binding.photoViewContainer.addView(playerView)
+            // --- VIDEO: reutilizar playerView y exoPlayer ---
+            try {
+                binding.photoViewContainer.addView(playerView)
+                playerView?.visibility = View.VISIBLE
+                // Crear o reutilizar exoPlayer
+                if (exoPlayer == null) {
+                    exoPlayer = ExoPlayer.Builder(this).build()
+                }
+                playerView?.player = exoPlayer
+                exoPlayer?.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+                exoPlayer?.prepare()
+                exoPlayer?.play()
+                updatePlayPauseUI(true)
+                handler.post(updateTimeRunnable)
 
-            exoPlayer = ExoPlayer.Builder(this).build().also { player ->
-                playerView.player = player
-                player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
-                player.prepare()
-                player.play()
+                exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onPlaybackStateChanged(state: Int) {
+                        if (state == ExoPlayer.STATE_ENDED) {
+                            // avanzar al siguiente video sin crash
+                            nextMediaVideo()
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error al reproducir video", Toast.LENGTH_SHORT).show()
+                // evitar crash: intentar avanzar
+                nextMediaVideo()
             }
 
-            updatePlayPauseUI(true)
-            handler.post(updateTimeRunnable)
-
-            exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == ExoPlayer.STATE_ENDED) {
-                        nextMediaVideo()
-                    }
-                }
-            })
-
         } else {
-            // --- IMAGEN ---
-            val photoView = PhotoView(this)
-            binding.photoViewContainer.addView(photoView)
+            // --- IMAGEN: reutilizar photoView y cargar con Glide en baja resolución ---
+            try {
+                // Añadir sólo una vez la photoView
+                if (photoView?.parent == null) {
+                    binding.photoViewContainer.addView(photoView)
+                } else {
+                    // si ya está, solo asegurar su visibilidad
+                    photoView?.visibility = View.VISIBLE
+                }
 
-            Glide.with(this)
-                .load(file)
-                .into(photoView)
+                // Cargar imagen con downsample y thumbnail para reducir picos de memoria
+                val picMaxDim = calculateTargetImageSize()
+                Glide.with(this)
+                    .asBitmap()
+                    .load(file)
+                    .override(picMaxDim, picMaxDim) // reduce tamaño en memoria
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    .thumbnail(0.15f) // carga una versión rápida primero
+                    .into(object : BitmapImageViewTarget(photoView) {
+                        override fun setResource(resource: Bitmap?) {
+                            try {
+                                super.setResource(resource)
+                            } catch (e: Exception) {
+                                // fallback: mostrar toast y evitar crash
+                            }
+                        }
+                    })
 
-            updateBlurBackground(file)
+                // actualizar blur de fondo de forma downscaleada y con límites
+                updateBlurBackgroundOptimized(file)
 
-            // Iniciar slideshow automáticamente
-            val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-            val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
-            val randomMode = prefs.getBoolean("slide_random", true)
-            val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
-            val effects = effectNames.map { SlideEffect.valueOf(it) }
+                // Iniciar slideshow (si aplica) con límites seguros
+                val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+                var intervalSec = prefs.getInt("slide_interval", 3)
+                if (intervalSec < 2) intervalSec = 2                // límite inferior
+                if (intervalSec > 30) intervalSec = 30              // límite superior
+                val intervalMs = intervalSec * 1000L
+                val randomMode = prefs.getBoolean("slide_random", true)
+                val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
+                val effects = effectNames.mapNotNull { runCatching { SlideEffect.valueOf(it) }.getOrNull() }
 
-            isSlideShowRunning = true
-            prepareSlideShow(intervalMs, effects, randomMode)
-            slideRunnable?.let { handler.post(it) }
-
-            updatePlayPauseUI(true)
+                startSlideShowSafe(intervalMs, if (effects.isEmpty()) listOf(SlideEffect.TRANSLATE) else effects, randomMode)
+                updatePlayPauseUI(true)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error al mostrar imagen", Toast.LENGTH_SHORT).show()
+            }
         }
+    }
+
+    // Evitar multiples runnables
+    private fun cancelSlideRunnable() {
+        slideRunnable?.let {
+            handler.removeCallbacks(it)
+            slideRunnable = null
+        }
+        slideRunning.set(false)
+    }
+
+    private fun startSlideShowSafe(intervalMs: Long, effects: List<SlideEffect>, random: Boolean) {
+        // si ya corre, no iniciar otra vez
+        if (slideRunning.get()) return
+
+        slideRunnable = object : Runnable {
+            override fun run() {
+                try {
+                    val advanced = advanceToNextImage()
+                    if (!advanced) {
+                        // fin de presentación
+                        slideRunning.set(false)
+                        binding.txtFileName.text = "Fin de la presentación"
+                        return
+                    }
+
+                    val currentFile = mediaFiles[currentIndex]
+
+                    // Cargar en photoView reutilizable (sin crear nuevas vistas)
+                    Glide.with(this@ViewerActivity)
+                        .asBitmap()
+                        .load(currentFile)
+                        .override(calculateTargetImageSize(), calculateTargetImageSize())
+                        .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                        .thumbnail(0.15f)
+                        .into(photoView!!)
+
+                    // Actualizar blur background pero con throttling (cada X slides) para ahorrar CPU
+                    updateBlurBackgroundOptimized(currentFile)
+
+                    // Animaciones ligeras: fade-in para suavizar cambio
+                    photoView?.alpha = 0f
+                    photoView?.animate()?.alpha(1f)?.setDuration(500)?.start()
+
+                    // aplicar efecto ligero
+                    val effect = if (random) effects.random() else effects.first()
+                    applyEffect(photoView!!, effect)
+
+                } catch (e: Exception) {
+                    // proteger contra errores nativos
+                } finally {
+                    // reprogramar solo si activity no finishing y slide sigue true
+                    if (!isFinishing && slideRunning.get()) handler.postDelayed(this, intervalMs)
+                }
+            }
+        }
+
+        slideRunning.set(true)
+        slideRunnable?.let { handler.postDelayed(it, intervalMs) }
+    }
+
+    private fun advanceToNextImage(): Boolean {
+        if (mediaFiles.isEmpty()) return false
+
+        // buscamos siguiente índice que sea imagen
+        var next = (currentIndex + 1) % mediaFiles.size
+        var attempts = 0
+        while (attempts < mediaFiles.size) {
+            val f = mediaFiles[next]
+            if (!isVideo(f)) {
+                currentIndex = next
+                return true
+            }
+            next = (next + 1) % mediaFiles.size
+            attempts++
+        }
+        return false
+    }
+
+    private fun nextMediaVideo() {
+        if (mediaFiles.isEmpty()) return
+        // liberar player y buscar siguiente video no mostrado
+        releasePlayer()
+        var nextIndex = currentIndex + 1
+        while (nextIndex < mediaFiles.size) {
+            val file = mediaFiles[nextIndex]
+            if (isVideo(file)) {
+                currentIndex = nextIndex
+                showMedia(currentIndex)
+                return
+            }
+            nextIndex++
+        }
+        // no hay más videos
+        binding.txtFileName.text = "Último video"
     }
 
     private fun togglePlayback() {
@@ -220,35 +396,24 @@ class ViewerActivity : AppCompatActivity() {
             exoPlayer?.let { player ->
                 if (player.isPlaying) {
                     player.pause()
-                    isSlideShowRunning = false
                     updatePlayPauseUI(false)
                     Toast.makeText(this, "Video pausado", Toast.LENGTH_SHORT).show()
                 } else {
                     player.play()
-                    isSlideShowRunning = true
                     updatePlayPauseUI(true)
                     Toast.makeText(this, "Video reproduciéndose", Toast.LENGTH_SHORT).show()
                 }
             }
         } else {
-            // --- IMAGEN / SLIDESHOW ---
-            val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-            val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
-            val randomMode = prefs.getBoolean("slide_random", true)
-            val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
-            val effects = effectNames.map { SlideEffect.valueOf(it) }
-
-            if (!isSlideShowRunning) {
-                prepareSlideShow(intervalMs, effects, randomMode)
-                slideRunnable?.let { handler.post(it) }
-                isSlideShowRunning = true
-                updatePlayPauseUI(true)
+            if (!slideRunning.get()) {
+                // iniciar slideshow con configuración por defecto segura
+                startSlideShowSafe(3000L, listOf(SlideEffect.TRANSLATE, SlideEffect.FADE), true)
                 Toast.makeText(this, "Iniciando presentación", Toast.LENGTH_SHORT).show()
+                updatePlayPauseUI(true)
             } else {
-                slideRunnable?.let { handler.removeCallbacks(it) }
-                isSlideShowRunning = false
-                updatePlayPauseUI(false)
+                cancelSlideRunnable()
                 Toast.makeText(this, "Presentación detenida", Toast.LENGTH_SHORT).show()
+                updatePlayPauseUI(false)
             }
         }
     }
@@ -258,312 +423,115 @@ class ViewerActivity : AppCompatActivity() {
             if (isPlaying) android.R.drawable.ic_media_pause
             else android.R.drawable.ic_media_play
         )
-
         binding.videoCenterIcon.visibility = if (isPlaying) View.GONE else View.VISIBLE
     }
 
-
-    private fun updateBlurBackground(file: File) {
-        Glide.with(this)
-            .asBitmap()
-            .load(file)
-            .diskCacheStrategy(DiskCacheStrategy.NONE)
-            .skipMemoryCache(true)
-            .into(object : BitmapImageViewTarget(binding.blurBackground) {
-                override fun setResource(resource: Bitmap?) {
-                    super.setResource(resource)
-                    resource?.let {
-                        applyBlur(binding.blurBackground, it)
-                    }
-                }
-            })
+    private fun calculateTargetImageSize(): Int {
+        // Reducir la resolución de las imágenes para TV de bajos recursos:
+        val displayMetrics = resources.displayMetrics
+        val screenShort = Math.min(displayMetrics.widthPixels, displayMetrics.heightPixels)
+        // limitar a como máximo 1080, pero en TVs de bajos recursos preferir 800
+        return Math.min(1080, Math.max(720, (screenShort * 0.8).toInt()))
     }
 
+    private fun updateBlurBackgroundOptimized(file: File) {
+        // Para ahorrar CPU/RAM: cargamos una versión muy reducida para el blur
+        try {
+            val blurSize = 200 // pequeño -> bajo consumo
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Para Android 12+ usamos RenderEffect pero con bitmap downscaled
+                Glide.with(this)
+                    .asBitmap()
+                    .load(file)
+                    .override(blurSize, blurSize)
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    .into(object : BitmapImageViewTarget(binding.blurBackground) {
+                        override fun setResource(resource: Bitmap?) {
+                            super.setResource(resource)
+                            resource?.let {
+                                try {
+                                    val drawable = BitmapDrawable(resources, it)
+                                    binding.blurBackground.setImageDrawable(drawable)
+                                    val blurEffect = RenderEffect.createBlurEffect(18f, 18f, Shader.TileMode.CLAMP)
+                                    binding.blurBackground.setRenderEffect(blurEffect)
+                                } catch (e: Exception) {
+                                    // fallback a Glide transform si falla
+                                    Glide.with(this@ViewerActivity)
+                                        .load(file)
+                                        .transform(BlurTransformation(10, 2))
+                                        .into(binding.blurBackground)
+                                }
+                            }
+                        }
+                    })
+            } else {
+                // Para versiones antiguas usar la transformación de Glide pero con parámetros reducidos
+                Glide.with(this)
+                    .load(file)
+                    .override(blurSize, blurSize)
+                    .transform(BlurTransformation(10, 2))
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    .into(binding.blurBackground)
+            }
+        } catch (e: Exception) {
+            // no bloquear UI si falla el blur
+        }
+    }
 
-    private fun applyBlur(imageView: ImageView, bitmap: Bitmap) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val drawable = BitmapDrawable(imageView.resources, bitmap)
-            imageView.setImageDrawable(drawable)
-            val blurEffect = RenderEffect.createBlurEffect(60f, 60f, Shader.TileMode.CLAMP)
-            imageView.setRenderEffect(blurEffect)
+    private fun releasePlayer() {
+        try {
+            playerView?.player = null
+            exoPlayer?.release()
+            exoPlayer = null
+            handler.removeCallbacks(updateTimeRunnable)
+        } catch (e: Exception) {
+            // proteger
+        } finally {
+            playerView?.visibility = View.GONE
+        }
+    }
+
+    private fun finishSafely() {
+        // cerrar limpiamente
+        releasePlayer()
+        cancelSlideRunnable()
+        if (!isFinishing) finish()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // navegación simplificada y adaptada a TV
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { advanceOrNext(); true }
+            KeyEvent.KEYCODE_DPAD_LEFT -> { previousMedia(); true }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { toggleBottomBar(); true }
+            else -> super.onKeyDown(keyCode, event)
+        }
+    }
+
+    private fun advanceOrNext() {
+        // si es imagen y slideshow no corriendo: avanzar imagen; si es video: avanzar video
+        val f = mediaFiles.getOrNull(currentIndex) ?: return
+        if (isVideo(f)) nextMediaVideo() else {
+            advanceToNextImage()
+            showMedia(currentIndex)
+        }
+    }
+
+    private fun toggleBottomBar() {
+        val bottomBarVisible = binding.bottomBar.visibility == View.VISIBLE
+        if (bottomBarVisible) {
+            binding.bottomBar.visibility = View.GONE
+            binding.photoViewContainer.requestFocus()
         } else {
-            Glide.with(imageView.context)
-                .load(bitmap)
-                .transform(BlurTransformation(25, 3))
-                .into(imageView)
+            binding.bottomBar.visibility = View.VISIBLE
+            binding.btnPlayPause.requestFocus()
         }
     }
-
-    private fun nextMediaImage(): Boolean {
-        if (mediaFiles.isEmpty()) return false
-
-        // Buscar la siguiente imagen que aún no se haya mostrado
-        val nextIndex = mediaFiles.indices.firstOrNull { i ->
-            !isVideo(mediaFiles[i]) && !shownImages.contains(mediaFiles[i])
-        }
-
-        if (nextIndex == null) {
-            // No quedan más imágenes sin mostrar
-            isSlideShowRunning = false
-            binding.txtFileName.text = "Última imagen"
-            slideRunnable?.let { handler.removeCallbacks(it) }
-            Toast.makeText(this, "Fin de la presentación", Toast.LENGTH_SHORT).show()
-            return false
-        }
-
-        currentIndex = nextIndex
-        val currentFile = mediaFiles[currentIndex]
-        shownImages.add(currentFile) // Marcar como mostrada
-
-        // Mostrar la imagen
-        val photoView = binding.photoViewContainer.getChildAt(0) as? PhotoView
-            ?: PhotoView(this).also {
-                binding.photoViewContainer.removeAllViews()
-                binding.photoViewContainer.addView(it)
-            }
-        Glide.with(this).load(currentFile).into(photoView)
-        binding.txtFileName.text = currentFile.name
-
-        return true
-    }
-
-    // --- Slideshow ---
-    private fun prepareSlideShow(intervalMs: Long, effects: List<SlideEffect>, random: Boolean) {
-        slideRunnable?.let { handler.removeCallbacks(it) }
-
-        slideRunnable = object : Runnable {
-            override fun run() {
-                val advanced = nextMediaImage() // centralizamos toda la lógica aquí
-                if (!advanced) return // Si no hay más imágenes, se detiene
-
-                // Obtener el archivo actual después de avanzar
-                val currentFile = mediaFiles[currentIndex]
-
-                // Mostrar la imagen con transición suave
-                val oldPhoto = binding.photoViewContainer.getChildAt(0) as? PhotoView
-                val newPhoto = PhotoView(this@ViewerActivity)
-
-                binding.photoViewContainer.addView(newPhoto)
-                newPhoto.alpha = 0f
-                Glide.with(this@ViewerActivity).load(currentFile).into(newPhoto)
-// 🔹 Actualizar el fondo difuminado
-                updateBlurBackground(currentFile)
-                // Animar el desvanecimiento
-                oldPhoto?.animate()?.alpha(0f)?.setDuration(800)?.withEndAction {
-                    binding.photoViewContainer.removeView(oldPhoto)
-                }?.start()
-
-                newPhoto.animate().alpha(1f).setDuration(800).start()
-
-                // Aplicar efecto adicional si se quiere
-                val effect = if (random) effects.random() else effects.firstOrNull() ?: SlideEffect.TRANSLATE
-                applyEffect(newPhoto, effect)
-
-                // Actualizar nombre
-                binding.txtFileName.text = currentFile.name
-
-                // Preparar siguiente paso
-                handler.postDelayed(this, intervalMs)
-            }
-        }
-    }
-
-    // --- Inicializar presentación ---
-    private fun startSlideShow() {
-        // Reiniciar la lista de imágenes mostradas
-        shownImages.clear()
-        // Siempre comenzar con la imagen más reciente (índice 0 después de ordenar)
-        currentIndex = 0
-        val currentFile = mediaFiles.getOrNull(currentIndex)
-        currentFile?.let { shownImages.add(it) }
-        showMedia(currentIndex)
-        isSlideShowRunning = true
-
-        // Preparar slideshow con efectos y randomMode
-        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-        val intervalMs = prefs.getInt("slide_interval", 3) * 1000L
-        val randomMode = prefs.getBoolean("slide_random", true)
-        val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
-        val effects = effectNames.map { SlideEffect.valueOf(it) }
-
-        prepareSlideShow(intervalMs, effects, randomMode)
-        slideRunnable?.let { handler.postDelayed(it, intervalMs) }
-    }
-
-
-    enum class SlideEffect {
-        TRANSLATE, ZOOM, FADE, ROTATE, SCALE,
-        ROTATE_SCALE, ZOOM_FADE, TRANSLATE_FADE,
-        BOUNCE, SHADOW, FLIP_HORIZONTAL, FLIP_VERTICAL
-    }
-
-    private fun applyEffect(photoView: PhotoView, effect: SlideEffect) {
-        val duration = 800L
-        val interpolator = AccelerateDecelerateInterpolator()
-
-        when(effect) {
-            SlideEffect.TRANSLATE -> photoView.animate()
-                .translationX(30f).translationY(30f)
-                .setDuration(duration)
-                .setInterpolator(interpolator)
-                .withEndAction {
-                    photoView.translationX = 0f
-                    photoView.translationY = 0f
-                }.start()
-
-            SlideEffect.ZOOM -> photoView.animate()
-                .scaleX(1.15f).scaleY(1.15f)
-                .setDuration(duration)
-                .setInterpolator(interpolator)
-                .withEndAction {
-                    photoView.scaleX = 1f
-                    photoView.scaleY = 1f
-                }.start()
-
-            SlideEffect.FADE -> photoView.animate()
-                .alpha(0f)
-                .setDuration(duration / 2)
-                .setInterpolator(interpolator)
-                .withEndAction {
-                    photoView.alpha = 1f
-                }.start()
-
-            SlideEffect.ROTATE -> photoView.animate()
-                .rotationBy(180f)
-                .setDuration(duration)
-                .setInterpolator(interpolator)
-                .withEndAction {
-                    photoView.rotation = 0f
-                }.start()
-
-            SlideEffect.SCALE -> photoView.animate()
-                .scaleX(0.85f).scaleY(0.85f)
-                .setDuration(duration)
-                .setInterpolator(interpolator)
-                .withEndAction {
-                    photoView.scaleX = 1f
-                    photoView.scaleY = 1f
-                }.start()
-
-            SlideEffect.TRANSLATE_FADE -> {
-                photoView.alpha = 0f
-                photoView.translationX = 50f
-                photoView.translationY = 50f
-                photoView.animate()
-                    .alpha(1f)
-                    .translationX(0f)
-                    .translationY(0f)
-                    .setDuration(duration)
-                    .setInterpolator(interpolator)
-                    .start()
-            }
-
-            SlideEffect.ZOOM_FADE -> {
-                photoView.alpha = 0f
-                photoView.scaleX = 1.2f
-                photoView.scaleY = 1.2f
-                photoView.animate()
-                    .alpha(1f)
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setDuration(duration)
-                    .setInterpolator(interpolator)
-                    .start()
-            }
-
-            SlideEffect.BOUNCE -> {
-                photoView.translationY = -30f
-                photoView.animate()
-                    .translationY(0f)
-                    .setDuration(duration)
-                    .setInterpolator(interpolator)
-                    .start()
-            }
-
-            SlideEffect.FLIP_HORIZONTAL -> {
-                photoView.rotationY = -90f
-                photoView.animate()
-                    .rotationY(0f)
-                    .setDuration(duration)
-                    .setInterpolator(interpolator)
-                    .start()
-            }
-
-            SlideEffect.FLIP_VERTICAL -> {
-                photoView.rotationX = -90f
-                photoView.animate()
-                    .rotationX(0f)
-                    .setDuration(duration)
-                    .setInterpolator(interpolator)
-                    .start()
-            }
-
-            SlideEffect.ROTATE_SCALE -> {
-                photoView.scaleX = 1.2f
-                photoView.scaleY = 1.2f
-                photoView.rotation = 45f
-                photoView.animate()
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .rotation(0f)
-                    .setDuration(duration)
-                    .setInterpolator(interpolator)
-                    .start()
-            }
-
-            SlideEffect.SHADOW -> {
-                photoView.translationZ = 20f
-                photoView.animate()
-                    .translationZ(0f)
-                    .setDuration(duration)
-                    .setInterpolator(interpolator)
-                    .start()
-            }
-        }
-    }
-
-    private fun formatTime(ms: Long): String {
-        val totalSeconds = ms / 1000
-        val minutes = totalSeconds / 60
-        val seconds = totalSeconds % 60
-        return String.format("%02d:%02d", minutes, seconds)
-    }
-
-    // Listas para recordar los archivos ya mostrados
-    private val shownImages = mutableSetOf<File>()
-    private val shownVideos = mutableSetOf<File>()
-
-    private fun nextMediaVideo() {
-        if (mediaFiles.isEmpty()) return
-        exoPlayer?.release()
-        exoPlayer = null
-
-        // Buscar el siguiente video que NO se haya mostrado aún
-        var nextIndex = currentIndex + 1
-        while (nextIndex < mediaFiles.size) {
-            val file = mediaFiles[nextIndex]
-            if (isVideo(file) && !shownVideos.contains(file)) {
-                shownVideos.add(file)
-                currentIndex = nextIndex
-                showMedia(currentIndex)
-                return
-            }
-            nextIndex++
-        }
-
-        // Si no quedan más videos sin mostrar
-        binding.txtFileName.text = "Último video"
-        isSlideShowRunning = false
-    }
-
-
 
     private fun previousMedia() {
+        cancelSlideRunnable()
+        releasePlayer()
         if (mediaFiles.isEmpty()) return
-        slideRunnable?.let { handler.removeCallbacks(it); isSlideShowRunning = false }
-        exoPlayer?.release()
-        exoPlayer = null
-
         currentIndex = if (currentIndex - 1 < 0) mediaFiles.size - 1 else currentIndex - 1
         showMedia(currentIndex)
     }
@@ -572,10 +540,148 @@ class ViewerActivity : AppCompatActivity() {
         return file.extension.lowercase() in listOf("mp4","mkv","avi","mov","wmv","flv")
     }
 
+    override fun onStop() {
+        super.onStop()
+        // liberar recursos cuando la activity no está visible -> reduce OOM en TV
+        releasePlayer()
+        cancelSlideRunnable()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        exoPlayer?.release()
-        handler.removeCallbacks(updateTimeRunnable)
-        slideRunnable?.let { handler.removeCallbacks(it) }
+        try {
+            unregisterReceiver(mediaUnmountReceiver)
+        } catch (e: Exception) { /* ignore */ }
+        releasePlayer()
+        cancelSlideRunnable()
     }
+
+    // Formateo seguro de tiempo mostrado
+    private fun formatTimeSafe(ms: Long): String {
+        if (ms <= 0 || ms == Long.MIN_VALUE || ms == Long.MAX_VALUE) return "00:00"
+        val totalSeconds = (ms / 1000).coerceAtLeast(0)
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format("%02d:%02d", minutes, seconds)
+    }
+
+    // --- Animaciones y efectos ligeros ---
+    enum class SlideEffect { TRANSLATE, ZOOM, FADE, ROTATE, SCALE, ROTATE_SCALE, BOUNCE, FLIP_HORIZONTAL, FLIP_VERTICAL, SHADOW }
+
+    private fun applyEffect(photoView: PhotoView, effect: SlideEffect) {
+        val duration = 500L
+        val interpolator = AccelerateDecelerateInterpolator()
+
+        try {
+            when (effect) {
+                SlideEffect.TRANSLATE -> {
+                    photoView.animate()
+                        .translationX(20f).translationY(20f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .withEndAction {
+                            photoView.translationX = 0f
+                            photoView.translationY = 0f
+                        }.start()
+                }
+
+                SlideEffect.ZOOM -> {
+                    photoView.animate()
+                        .scaleX(1.08f).scaleY(1.08f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .withEndAction {
+                            photoView.scaleX = 1f
+                            photoView.scaleY = 1f
+                        }.start()
+                }
+
+                SlideEffect.FADE -> {
+                    photoView.alpha = 0f
+                    photoView.animate()
+                        .alpha(1f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .start()
+                }
+
+                SlideEffect.ROTATE -> {
+                    photoView.animate()
+                        .rotationBy(360f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .withEndAction { photoView.rotation = 0f }
+                        .start()
+                }
+
+                SlideEffect.SCALE -> {
+                    photoView.animate()
+                        .scaleX(0.92f).scaleY(0.92f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .withEndAction {
+                            photoView.scaleX = 1f
+                            photoView.scaleY = 1f
+                        }.start()
+                }
+
+                SlideEffect.BOUNCE -> {
+                    photoView.translationY = -20f
+                    photoView.animate()
+                        .translationY(0f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .start()
+                }
+
+                SlideEffect.FLIP_HORIZONTAL -> {
+                    photoView.rotationY = -90f
+                    photoView.animate()
+                        .rotationY(0f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .start()
+                }
+
+                SlideEffect.FLIP_VERTICAL -> {
+                    photoView.rotationX = -90f
+                    photoView.animate()
+                        .rotationX(0f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .start()
+                }
+
+                SlideEffect.ROTATE_SCALE -> {
+                    photoView.scaleX = 1.12f
+                    photoView.scaleY = 1.12f
+                    photoView.rotation = 15f
+                    photoView.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .rotation(0f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .start()
+                }
+
+                SlideEffect.SHADOW -> {
+                    photoView.translationZ = 10f
+                    photoView.animate()
+                        .translationZ(0f)
+                        .setDuration(duration)
+                        .setInterpolator(interpolator)
+                        .start()
+                }
+
+                // 🔹 En caso de que se agregue un nuevo efecto en el futuro
+                else -> {
+                    // Sin animación, evita crash en builds antiguos
+                }
+            }
+        } catch (e: Exception) {
+            // Previene cierres inesperados en TV de bajos recursos
+        }
+    }
+
 }

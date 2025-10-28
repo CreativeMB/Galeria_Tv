@@ -4,7 +4,7 @@
     <selectionStates>
       <SelectionState runConfigName="Galeria_Tv">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-10-27T21:54:21.776273700Z">
+        <DropdownSelection timestamp="2025-10-28T16:53:29.438478300Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\Oficina\.android\avd\Television_1080p_API_34_1.avd" />

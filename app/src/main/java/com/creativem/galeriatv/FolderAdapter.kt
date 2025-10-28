@@ -6,6 +6,7 @@ import android.os.Build
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
@@ -21,13 +22,11 @@ class FolderAdapter(
     private val onItemClick: (fileItem: FileItem, isFolder: Boolean) -> Unit
 ) : RecyclerView.Adapter<FolderAdapter.FolderViewHolder>() {
 
-    private var selectedFolder: File? = null
-    private val visitedFolders = mutableSetOf<String>()
     private val items = mutableListOf<FileItem>()
+    private val visitedFolders = mutableSetOf<String>()
+    private var selectedFolder: File? = null
     private var spanCount = 1
     private var itemWidth = 0
-
-    // Para forzar foco al cargar
     private var focusFirstItemOnNextLoad = true
 
     fun submitList(newList: List<FileItem>) {
@@ -40,12 +39,10 @@ class FolderAdapter(
     fun setSpanCount(newSpanCount: Int) {
         spanCount = newSpanCount
         recalcItemWidth()
-        notifyDataSetChanged()
     }
 
     fun setRecyclerWidth(recyclerWidth: Int) {
         recalcItemWidth(recyclerWidth)
-        notifyDataSetChanged()
     }
 
     private fun recalcItemWidth(recyclerWidth: Int = 0) {
@@ -56,19 +53,19 @@ class FolderAdapter(
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FolderViewHolder {
-        val binding = ItemFileBinding.inflate(LayoutInflater.from(context), parent, false)
+        val binding = ItemFileBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return FolderViewHolder(binding)
     }
 
     @RequiresApi(Build.VERSION_CODES.M)
     override fun onBindViewHolder(holder: FolderViewHolder, position: Int) {
         val item = items[position]
+        val binding = holder.binding
 
-        holder.binding.fileName.text = item.name
-        holder.binding.fileName.isSelected = true
-        holder.binding.root.layoutParams.width = itemWidth
-        holder.binding.root.layoutParams.height = itemWidth + dpToPx(40)
-        holder.binding.root.requestLayout()
+        binding.fileName.text = item.name
+        binding.fileName.isSelected = true
+        binding.root.layoutParams.width = itemWidth
+        binding.root.layoutParams.height = itemWidth + dpToPx(40)
 
         val imageToLoad = if (item.isFolder) {
             item.file.listFiles { f ->
@@ -78,69 +75,74 @@ class FolderAdapter(
         } else item.file
 
         val extension = item.file.extension.lowercase()
-        val isVideo = extension in listOf("mp4","mkv","avi","mov","wmv","flv")
+        val isVideo = extension in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")
 
         fun updateBackground() {
-            holder.binding.root.background = when {
-                item.isFolder && item.file == selectedFolder ->
-                    ContextCompat.getDrawable(context, R.drawable.item_background_selector_unvisited)
-                item.isFolder && visitedFolders.contains(item.file.absolutePath) ->
-                    ContextCompat.getDrawable(context, R.drawable.item_background_selector_visited)
+            binding.root.background = when {
+                item.isFolder && item.file == selectedFolder -> ContextCompat.getDrawable(context, R.drawable.item_background_selector_unvisited)
+                item.isFolder && visitedFolders.contains(item.file.absolutePath) -> ContextCompat.getDrawable(context, R.drawable.item_background_selector_visited)
                 else -> ContextCompat.getDrawable(context, R.drawable.item_background_selector_unvisited)
             }
         }
         updateBackground()
 
-        // Focus con animación
-        holder.itemView.setOnFocusChangeListener { view, hasFocus ->
-            if (hasFocus) {
-                view.animate().scaleX(1.12f).scaleY(1.12f).setDuration(150).start()
-                view.elevation = 16f
-                view.background = ContextCompat.getDrawable(context, R.drawable.item_background_selector)
-            } else {
-                view.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
-                view.elevation = 0f
-                updateBackground()
+        // Animación de foco optimizada (sin fugas de GPU)
+        binding.root.setOnFocusChangeListener { view, hasFocus ->
+            val scale = if (hasFocus) 1.12f else 1f
+            view.animate()
+                .scaleX(scale)
+                .scaleY(scale)
+                .setDuration(150)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .start()
+
+            view.elevation = if (hasFocus) 16f else 0f
+            view.background = if (hasFocus)
+                ContextCompat.getDrawable(context, R.drawable.item_background_selector)
+            else {
+                updateBackground(); view.background
             }
         }
 
-        Glide.with(holder.binding.fileIcon.context)
+        // Carga de imagen optimizada para TV
+        Glide.with(binding.fileIcon.context)
             .asBitmap()
             .load(imageToLoad ?: R.drawable.icono)
+            .format(DecodeFormat.PREFER_RGB_565)
             .centerCrop()
             .placeholder(R.drawable.outline_hangout_video_24)
             .override(itemWidth / 2, itemWidth / 2)
-            .diskCacheStrategy(DiskCacheStrategy.NONE)
-            .skipMemoryCache(true)
-            .dontAnimate()
-            .into(holder.binding.fileIcon)
+            .diskCacheStrategy(DiskCacheStrategy.DATA)
+            .skipMemoryCache(false)
+            .into(binding.fileIcon)
 
-        holder.binding.fileIcon.foreground =
-            if (item.isFolder) context.getDrawable(R.drawable.overlay_folder_border) else null
+        binding.fileIcon.foreground = if (item.isFolder)
+            context.getDrawable(R.drawable.overlay_folder_border)
+        else null
 
-        holder.binding.playOverlay.visibility = if (isVideo) View.VISIBLE else View.GONE
+        binding.playOverlay.visibility = if (isVideo) View.VISIBLE else View.GONE
 
         // Click normal
-        holder.binding.root.setOnClickListener {
+        binding.root.setOnClickListener {
             onItemClick(item, item.isFolder)
             if (item.isFolder) markFolderAsVisited(item.file)
             selectedFolder = item.file
-            notifyItemChanged(position) // Solo actualizar este item
+            notifyItemChanged(position)
         }
 
-        // Click largo
-        holder.binding.root.setOnLongClickListener {
-            val position = holder.bindingAdapterPosition
-            if (position == RecyclerView.NO_POSITION) return@setOnLongClickListener true
+        // Click largo: eliminar
+        binding.root.setOnLongClickListener {
+            val pos = holder.bindingAdapterPosition
+            if (pos == RecyclerView.NO_POSITION) return@setOnLongClickListener true
 
-            val item = items[position]
+            val itemToDelete = items[pos]
             AlertDialog.Builder(context)
                 .setTitle("Eliminar")
-                .setMessage("¿Deseas eliminar '${item.name}' permanentemente?")
+                .setMessage("¿Deseas eliminar '${itemToDelete.name}' permanentemente?")
                 .setPositiveButton("Eliminar") { _, _ ->
-                    if (deleteRecursive(item.file)) {
-                        items.removeAt(position)
-                        notifyItemRemoved(position)
+                    if (deleteRecursive(itemToDelete.file)) {
+                        items.removeAt(pos)
+                        notifyItemRemoved(pos)
                         Toast.makeText(context, "Archivo eliminado", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Error al eliminar archivo", Toast.LENGTH_SHORT).show()
@@ -151,8 +153,7 @@ class FolderAdapter(
             true
         }
 
-
-        // Forzar foco en el primer item cargado
+        // Foco inicial
         if (focusFirstItemOnNextLoad && position == 0) {
             holder.itemView.post {
                 holder.itemView.requestFocus()
@@ -164,23 +165,16 @@ class FolderAdapter(
     private fun deleteRecursive(fileOrDirectory: File): Boolean {
         return try {
             if (fileOrDirectory.isDirectory) {
-                fileOrDirectory.listFiles()?.forEach { child ->
-                    if (!deleteRecursive(child)) return false
-                }
+                fileOrDirectory.listFiles()?.forEach { if (!deleteRecursive(it)) return false }
             }
             fileOrDirectory.delete()
         } catch (e: Exception) {
-            e.printStackTrace()
             false
         }
     }
 
-
     fun getSelectedFolder(): File? = selectedFolder
-
-    fun markFolderAsVisited(folder: File) {
-        visitedFolders.add(folder.absolutePath)
-    }
+    fun markFolderAsVisited(folder: File) { visitedFolders.add(folder.absolutePath) }
 
     override fun getItemCount(): Int = items.size
 
