@@ -65,18 +65,19 @@ class ViewerActivity : AppCompatActivity() {
         override fun run() {
             try {
                 exoPlayer?.let { player ->
-                    if (player.isPlaying) {
-                        val remainingMs = player.duration - player.currentPosition
-                        binding.txtFileName.text = formatTimeSafe(remainingMs)
-                    }
+                    val duration = player.duration
+                    val current = player.currentPosition
+                    val remainingMs = if (duration > 0) duration - current else 0L
+                    binding.txtFileName.text = formatTimeSafe(remainingMs)
                 }
-                // Solo re-programar si el player existe y activity no finishing
                 if (!isFinishing && exoPlayer != null) handler.postDelayed(this, 500)
             } catch (e: Exception) {
-                // proteger contra errores del player en dispositivos inestables
+                // proteger contra errores del player
             }
         }
     }
+
+
 
     // Receiver para detectar que la unidad se desmontó / extraída
     private val mediaUnmountReceiver = object : BroadcastReceiver() {
@@ -99,7 +100,6 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    @androidx.annotation.OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityViewerBinding.inflate(layoutInflater)
@@ -204,26 +204,22 @@ class ViewerActivity : AppCompatActivity() {
         currentIndex = index
         val file = mediaFiles[index]
 
-        // Limpiar container sin destruir las vistas reutilizables
+        // Limpiar container solo si se va a mostrar algo
         binding.photoViewContainer.removeAllViews()
 
-        // Detener player si estaba activo
+        // Detener player y slideshow
         releasePlayer()
-
-        // Cancelar tareas de slideshow pendientes (evitar acumulación)
         cancelSlideRunnable()
 
         binding.videoCenterIcon.visibility = View.GONE
 
         if (isVideo(file)) {
-            // --- VIDEO: reutilizar playerView y exoPlayer ---
+            // --- VIDEO ---
             try {
                 binding.photoViewContainer.addView(playerView)
                 playerView?.visibility = View.VISIBLE
-                // Crear o reutilizar exoPlayer
-                if (exoPlayer == null) {
-                    exoPlayer = ExoPlayer.Builder(this).build()
-                }
+
+                if (exoPlayer == null) exoPlayer = ExoPlayer.Builder(this).build()
                 playerView?.player = exoPlayer
                 exoPlayer?.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
                 exoPlayer?.prepare()
@@ -234,66 +230,61 @@ class ViewerActivity : AppCompatActivity() {
                 exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == ExoPlayer.STATE_ENDED) {
-                            // avanzar al siguiente video sin crash
-                            nextMediaVideo()
+                            if (currentIndex >= mediaFiles.lastIndex) {
+                                // Último video: detener player y slideshow
+                                releasePlayer()
+                                binding.txtFileName.text = "Último video"
+                            } else {
+                                nextMediaVideo()
+                            }
                         }
                     }
                 })
             } catch (e: Exception) {
                 Toast.makeText(this, "Error al reproducir video", Toast.LENGTH_SHORT).show()
-                // evitar crash: intentar avanzar
-                nextMediaVideo()
+                if (currentIndex < mediaFiles.lastIndex) nextMediaVideo() else releasePlayer()
             }
 
         } else {
-            // --- IMAGEN: reutilizar photoView y cargar con Glide en baja resolución ---
+            // --- IMAGEN ---
             try {
-                // Añadir sólo una vez la photoView
-                if (photoView?.parent == null) {
-                    binding.photoViewContainer.addView(photoView)
-                } else {
-                    // si ya está, solo asegurar su visibilidad
-                    photoView?.visibility = View.VISIBLE
-                }
+                binding.photoViewContainer.addView(photoView)
+                photoView?.visibility = View.VISIBLE
 
-                // Cargar imagen con downsample y thumbnail para reducir picos de memoria
                 val picMaxDim = calculateTargetImageSize()
                 Glide.with(this)
                     .asBitmap()
                     .load(file)
-                    .override(picMaxDim, picMaxDim) // reduce tamaño en memoria
+                    .override(picMaxDim, picMaxDim)
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
-                    .thumbnail(0.15f) // carga una versión rápida primero
-                    .into(object : BitmapImageViewTarget(photoView) {
-                        override fun setResource(resource: Bitmap?) {
-                            try {
-                                super.setResource(resource)
-                            } catch (e: Exception) {
-                                // fallback: mostrar toast y evitar crash
-                            }
-                        }
-                    })
+                    .thumbnail(0.15f)
+                    .into(photoView!!)
 
-                // actualizar blur de fondo de forma downscaleada y con límites
-                updateBlurBackgroundOptimized(file)
+                val hasMoreImages = mediaFiles.drop(currentIndex + 1).any { !isVideo(it) }
 
-                // Iniciar slideshow (si aplica) con límites seguros
-                val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-                var intervalSec = prefs.getInt("slide_interval", 3)
-                if (intervalSec < 2) intervalSec = 2                // límite inferior
-                if (intervalSec > 30) intervalSec = 30              // límite superior
-                val intervalMs = intervalSec * 1000L
-                val randomMode = prefs.getBoolean("slide_random", true)
-                val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
-                val effects = effectNames.mapNotNull { runCatching { SlideEffect.valueOf(it) }.getOrNull() }
+                if (hasMoreImages) {
+                    val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+                    val intervalSec = prefs.getInt("slide_interval", 3).coerceIn(2, 30)
+                    val intervalMs = intervalSec * 1000L
+                    val randomMode = prefs.getBoolean("slide_random", true)
+                    val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
+                    val effects = effectNames.mapNotNull { runCatching { SlideEffect.valueOf(it) }.getOrNull() }
 
-                startSlideShowSafe(intervalMs, if (effects.isEmpty()) listOf(SlideEffect.TRANSLATE) else effects, randomMode)
+                    startSlideShowSafe(intervalMs, if (effects.isEmpty()) listOf(SlideEffect.TRANSLATE) else effects, randomMode)
+                } else {
+                    // Última imagen: solo mostrar, sin slideshow ni animación pesada
+                    binding.txtFileName.text = "Última imagen"
+                    cancelSlideRunnable()
+                }
+
                 updatePlayPauseUI(true)
+
             } catch (e: Exception) {
                 Toast.makeText(this, "Error al mostrar imagen", Toast.LENGTH_SHORT).show()
             }
         }
     }
+
 
     // Evitar multiples runnables
     private fun cancelSlideRunnable() {
@@ -355,28 +346,21 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun advanceToNextImage(): Boolean {
-        if (mediaFiles.isEmpty()) return false
-
-        // buscamos siguiente índice que sea imagen
-        var next = (currentIndex + 1) % mediaFiles.size
-        var attempts = 0
-        while (attempts < mediaFiles.size) {
+        var next = currentIndex + 1
+        while (next < mediaFiles.size) {
             val f = mediaFiles[next]
             if (!isVideo(f)) {
                 currentIndex = next
                 return true
             }
-            next = (next + 1) % mediaFiles.size
-            attempts++
+            next++
         }
-        slideRunning.set(false)
-        return false
+        return false // última imagen, no hacer nada
     }
 
-    @androidx.annotation.OptIn(UnstableApi::class)
+
+
     private fun nextMediaVideo() {
-        if (mediaFiles.isEmpty()) return
-        // liberar player y buscar siguiente video no mostrado
         releasePlayer()
         var nextIndex = currentIndex + 1
         while (nextIndex < mediaFiles.size) {
@@ -386,10 +370,8 @@ class ViewerActivity : AppCompatActivity() {
                 showMedia(currentIndex)
                 return
             }
-            slideRunning.set(false)
             nextIndex++
         }
-        // no hay más videos
         binding.txtFileName.text = "Último video"
     }
 
@@ -505,6 +487,7 @@ class ViewerActivity : AppCompatActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
+
                 hideBottomBarIfVisible()
                 true
             }
@@ -528,6 +511,15 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
+    private fun advanceOrNext() {
+        // si es imagen y slideshow no corriendo: avanzar imagen; si es video: avanzar video
+        val f = mediaFiles.getOrNull(currentIndex) ?: return
+        if (isVideo(f)) nextMediaVideo() else {
+            advanceToNextImage()
+            showMedia(currentIndex)
+        }
+    }
+
     private fun toggleBottomBar() {
         val bottomBarVisible = binding.bottomBar.visibility == View.VISIBLE
         if (bottomBarVisible) {
@@ -539,7 +531,6 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    @androidx.annotation.OptIn(UnstableApi::class)
     private fun previousMedia() {
         cancelSlideRunnable()
         releasePlayer()
