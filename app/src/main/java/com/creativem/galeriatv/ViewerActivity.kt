@@ -99,6 +99,7 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityViewerBinding.inflate(layoutInflater)
@@ -368,9 +369,11 @@ class ViewerActivity : AppCompatActivity() {
             next = (next + 1) % mediaFiles.size
             attempts++
         }
+        slideRunning.set(false)
         return false
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
     private fun nextMediaVideo() {
         if (mediaFiles.isEmpty()) return
         // liberar player y buscar siguiente video no mostrado
@@ -383,6 +386,7 @@ class ViewerActivity : AppCompatActivity() {
                 showMedia(currentIndex)
                 return
             }
+            slideRunning.set(false)
             nextIndex++
         }
         // no hay más videos
@@ -535,6 +539,7 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
     private fun previousMedia() {
         cancelSlideRunnable()
         releasePlayer()
