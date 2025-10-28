@@ -212,8 +212,14 @@ class ViewerActivity : AppCompatActivity() {
         cancelSlideRunnable()
 
         binding.videoCenterIcon.visibility = View.GONE
-
         if (isVideo(file)) {
+            // Verificar compatibilidad
+            if (!isSupportedVideo(file)) {
+                Toast.makeText(this, "Formato de video no compatible: ${file.extension}", Toast.LENGTH_LONG).show()
+                binding.txtFileName.text = "Formato no compatible Usa Vlc "
+                return
+            }
+
             // --- VIDEO ---
             try {
                 binding.photoViewContainer.addView(playerView)
@@ -284,7 +290,10 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
     }
-
+    // Método para filtrar videos compatibles con ExoPlayer
+    private fun isSupportedVideo(file: File): Boolean {
+        return file.extension.lowercase() in listOf("mp4","mkv","mov") // formatos seguros
+    }
 
     // Evitar multiples runnables
     private fun cancelSlideRunnable() {
