@@ -99,7 +99,7 @@ class ViewerActivity : AppCompatActivity() {
             context.startActivity(intent)
         }
     }
-
+    @androidx.annotation.OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityViewerBinding.inflate(layoutInflater)
@@ -359,7 +359,7 @@ class ViewerActivity : AppCompatActivity() {
     }
 
 
-
+    @androidx.annotation.OptIn(UnstableApi::class)
     private fun nextMediaVideo() {
         releasePlayer()
         var nextIndex = currentIndex + 1
@@ -511,6 +511,7 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
     private fun advanceOrNext() {
         // si es imagen y slideshow no corriendo: avanzar imagen; si es video: avanzar video
         val f = mediaFiles.getOrNull(currentIndex) ?: return
@@ -531,6 +532,7 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
+    @androidx.annotation.OptIn(UnstableApi::class)
     private fun previousMedia() {
         cancelSlideRunnable()
         releasePlayer()

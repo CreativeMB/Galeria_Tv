@@ -2,6 +2,7 @@
     android:id="@+id/rootContainer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#545454"
     android:clipChildren="false"
     android:clipToPadding="false">
 

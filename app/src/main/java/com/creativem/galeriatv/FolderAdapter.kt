@@ -104,16 +104,18 @@ class FolderAdapter(
             }
         }
 
+        val targetSize = itemWidth / 4 // reducir tamaño máximo a 1/3 del contenedor para TV
+
         Glide.with(holder.binding.fileIcon.context)
             .asBitmap()
-            .load(imageToLoad ?: R.drawable.icono)
-            .centerCrop()
-            .placeholder(R.drawable.outline_hangout_video_24)
-            .override(itemWidth / 2, itemWidth / 2)
+            .load(imageToLoad ?: null) // null si no hay imagen, evita cargar drawable extra
+            .override(targetSize, targetSize)
             .diskCacheStrategy(DiskCacheStrategy.NONE)
             .skipMemoryCache(true)
             .dontAnimate()
             .into(holder.binding.fileIcon)
+
+
 
         holder.binding.fileIcon.foreground =
             if (item.isFolder) context.getDrawable(R.drawable.overlay_folder_border) else null
