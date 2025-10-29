@@ -2,11 +2,17 @@
     android:id="@+id/rootContainer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#545454"
+    android:background="#000000"
     android:clipChildren="false"
     android:clipToPadding="false">
 
     <!-- 🔹 Fondo difuminado -->
+    <ImageView
+        android:id="@+id/blurBackground"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="Fondo difuminado"
+        android:scaleType="centerCrop" />
 
     <!-- 🔹 Contenedor principal de fotos o videos -->
     <FrameLayout
@@ -14,60 +20,60 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipChildren="false"
-        android:clipToPadding="false">
+        android:clipToPadding="false" />
 
-        <ImageView
-            android:id="@+id/blurBackground"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:contentDescription="Fondo difuminado"
-            android:scaleType="centerCrop" />
-    </FrameLayout>
-
+    <!-- 🔹 Barra inferior con Play/Pause y nombre del archivo -->
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="@android:color/transparent"
-        android:gravity="center"
         android:orientation="horizontal"
-        android:padding="8dp">
+        android:gravity="center_vertical|center_horizontal"
+        android:padding="16dp"
+        android:background="@android:color/transparent">
 
-
-        <!-- Botón Play/Pause centrado -->
+        <!-- Botón Play/Pause -->
         <ImageView
             android:id="@+id/btnPlayPause"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
             android:background="@drawable/item_background_selector"
-            android:contentDescription="Play/Pause"
-            android:padding="8dp"
-            android:src="@drawable/baseline_play_circle_24" />
+            android:padding="12dp"
+            android:src="@drawable/baseline_play_circle_24"
+            android:contentDescription="Play/Pause" />
 
-
-        <!-- Nombre del archivo centrado verticalmente -->
+        <!-- Nombre del archivo -->
         <TextView
             android:id="@+id/txtFileName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="top|end"
-            android:padding="16dp"
-            android:textColor="#000000"
+            android:ellipsize="marquee"
+            android:focusable="false"
+            android:focusableInTouchMode="false"
+            android:marqueeRepeatLimit="marquee_forever"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp"
+            android:scrollHorizontally="true"
+            android:singleLine="true"
+            android:textColor="#FFFFFF"
             android:textSize="24sp"
-            android:textStyle="bold"
-            android:background="@android:color/transparent" />
+            android:textStyle="bold" />
+
 
     </LinearLayout>
 
-
-    <!-- 🔹 Icono central de play -->
+    <!-- 🔹 Icono central de play para video -->
     <ImageView
         android:id="@+id/videoCenterIcon"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
         android:layout_gravity="center"
         android:src="@drawable/baseline_play_circle_24"
-        android:visibility="gone" />
+        android:visibility="gone"
+        android:background="@drawable/item_background_selector"
+        android:padding="16dp" />
 
 </FrameLayout>

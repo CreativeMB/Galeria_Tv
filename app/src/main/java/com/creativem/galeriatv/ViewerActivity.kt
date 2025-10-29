@@ -1,5 +1,6 @@
 package com.creativem.galeriatv
 
+import android.R.attr.duration
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -18,6 +19,8 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.BounceInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -55,8 +58,9 @@ class ViewerActivity : AppCompatActivity() {
     private var audioPlayer: ExoPlayer? = null
     private var currentAudioIndex = 0
     private var shuffleAudio = true
+    private var isAudioPlayingForSlideShow = false
 
-
+    private var effectIndex = 0
 
     private lateinit var binding: ActivityViewerBinding
 
@@ -87,8 +91,6 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
     }
-
-
 
     // Receiver para detectar que la unidad se desmontó / extraída
     private val mediaUnmountReceiver = object : BroadcastReceiver() {
@@ -282,25 +284,24 @@ class ViewerActivity : AppCompatActivity() {
                     .thumbnail(0.15f)
                     .into(photoView!!)
 
-
-
-
+// Verificar si hay más imágenes para slideshow
                 val hasMoreImages = mediaFiles.drop(currentIndex + 1).any { !isVideo(it) }
 
                 if (hasMoreImages) {
-                    val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-                    val intervalSec = prefs.getInt("slide_interval", 3).coerceIn(2, 30)
+                    // Cargar preferencias guardadas
+                    val (intervalSec, randomMode, savedEffects) = loadSlideShowPreferences()
                     val intervalMs = intervalSec * 1000L
-                    val randomMode = prefs.getBoolean("slide_random", true)
-                    val effectNames = prefs.getStringSet("slide_effects", setOf("TRANSLATE","ZOOM","FADE")) ?: setOf("TRANSLATE")
-                    val effects = effectNames.mapNotNull { runCatching { SlideEffect.valueOf(it) }.getOrNull() }
 
-                    startSlideShowSafe(intervalMs, if (effects.isEmpty()) listOf(SlideEffect.TRANSLATE) else effects, randomMode)
+                    // Iniciar slideshow con efectos guardados y modo aleatorio si corresponde
+                    startSlideShowSafe(intervalMs, savedEffects, randomMode)
                 } else {
-                    // Última imagen: solo mostrar, sin slideshow ni animación pesada
+                    // Última imagen: mostrar solo, sin slideshow
                     binding.txtFileName.text = "Última imagen"
                     cancelSlideRunnable()
                 }
+
+
+
 
                 updatePlayPauseUI(true)
 
@@ -309,7 +310,24 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
     }
-    // Método para filtrar videos compatibles con ExoPlayer
+    private fun loadSlideShowPreferences(): Triple<Int, Boolean, List<ViewerActivity.SlideEffect>> {
+        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE) // mismo nombre
+        val interval = prefs.getInt("slide_interval", 3).coerceIn(2, 30)
+        val randomMode = prefs.getBoolean("slide_random", true)
+
+        val savedEffectsString = prefs.getString("slide_effects_ordered", "TRANSLATE") ?: "TRANSLATE"
+        val effects = savedEffectsString
+            .split(",")
+            .mapNotNull { runCatching { ViewerActivity.SlideEffect.valueOf(it) }.getOrNull() }
+            .ifEmpty { listOf(ViewerActivity.SlideEffect.TRANSLATE) }
+
+        // Log para depuración
+        Log.d("ViewerActivity", "Cargando slideshow prefs: interval=$interval, random=$randomMode, effects=${effects.joinToString()}")
+
+        return Triple(interval, randomMode, effects)
+    }
+
+
     private fun isSupportedVideo(file: File): Boolean {
         return file.extension.lowercase() in listOf("mp4","mkv","mov") // formatos seguros
     }
@@ -325,10 +343,12 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun startSlideShowSafe(intervalMs: Long, effects: List<SlideEffect>, random: Boolean) {
         if (slideRunning.get()) return
-
-        // Iniciar audio solo una vez al inicio
-        playRandomAudioContinuously()
-
+        slideRunning.set(true)
+        effectIndex = 0
+        if (!isAudioPlayingForSlideShow) {
+            playRandomAudioContinuously()
+            isAudioPlayingForSlideShow = true
+        }
         slideRunnable = object : Runnable {
             override fun run() {
                 val advanced = advanceToNextImage()
@@ -359,8 +379,16 @@ class ViewerActivity : AppCompatActivity() {
                 photoView?.alpha = 0f
                 photoView?.animate()?.alpha(1f)?.setDuration(500)?.start()
 
-                val effect = if (random) effects.random() else effects.first()
-                applyEffect(photoView!!, effect)
+                // Seleccionar efecto
+                val effect = if (random) effects.random()
+                else {
+                    val e = effects[effectIndex % effects.size]
+                    effectIndex++
+                    e
+                }
+
+                // Aplicar efecto optimizado, duración proporcional al intervalo
+                applyEffectOptimized(photoView!!, effect, intervalMs * 0.7f.toLong())
 
                 if (!isFinishing && slideRunning.get()) handler.postDelayed(this, intervalMs)
             }
@@ -514,39 +542,67 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        return when (keyCode) {
+        when (keyCode) {
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-
+                advanceOrNext()
                 hideBottomBarIfVisible()
-                true
+                return true
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                previousMedia()
+                previousOrPrevious()
                 hideBottomBarIfVisible()
-                true
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                advanceOrNext()  // también avanzar con UP si quieres
+                hideBottomBarIfVisible()
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                previousOrPrevious() // también retroceder con DOWN si quieres
+                hideBottomBarIfVisible()
+                return true
             }
             KeyEvent.KEYCODE_DPAD_CENTER -> {
                 toggleBottomBar()
-                true
+                return true
             }
-            else -> super.onKeyDown(keyCode, event)
+            else -> return super.onKeyDown(keyCode, event)
         }
     }
+    private fun previousOrPrevious() {
+        cancelSlideRunnable()
+        releasePlayer()
+        if (mediaFiles.isEmpty()) return
+
+        var prevIndex = currentIndex - 1
+        if (prevIndex < 0) prevIndex = mediaFiles.size - 1
+
+        currentIndex = prevIndex
+        showMedia(currentIndex)
+    }
+
+
+    @androidx.annotation.OptIn(UnstableApi::class)
+    @OptIn(UnstableApi::class)
+    private fun advanceOrNext() {
+        val file = mediaFiles.getOrNull(currentIndex) ?: return
+        cancelSlideRunnable() // evitar animaciones simultáneas
+
+        if (isVideo(file)) {
+            nextMediaVideo()
+        } else {
+            val hasNext = advanceToNextImage()
+            if (hasNext) showMedia(currentIndex)
+            else binding.txtFileName.text = "Última imagen"
+        }
+    }
+
 
     // Método auxiliar para ocultar bottomBar si está visible
     private fun hideBottomBarIfVisible() {
         if (binding.bottomBar.visibility == View.VISIBLE) {
             binding.bottomBar.visibility = View.GONE
-        }
-    }
-
-    @androidx.annotation.OptIn(UnstableApi::class)
-    private fun advanceOrNext() {
-        // si es imagen y slideshow no corriendo: avanzar imagen; si es video: avanzar video
-        val f = mediaFiles.getOrNull(currentIndex) ?: return
-        if (isVideo(f)) nextMediaVideo() else {
-            advanceToNextImage()
-            showMedia(currentIndex)
         }
     }
 
@@ -600,17 +656,28 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     // --- Animaciones y efectos ligeros ---
-    enum class SlideEffect { TRANSLATE, ZOOM, FADE, ROTATE, SCALE, ROTATE_SCALE, BOUNCE, FLIP_HORIZONTAL, FLIP_VERTICAL, SHADOW }
+    enum class SlideEffect {
+        TRANSLATE,
+        ZOOM,
+        FADE,
+        SCALE,
+        BOUNCE
+    }
 
-    private fun applyEffect(photoView: PhotoView, effect: SlideEffect) {
-        val duration = 500L
-        val interpolator = AccelerateDecelerateInterpolator()
+    // Animaciones optimizadas para TV: delta pequeño, duración proporcional
+    private fun applyEffectOptimized(photoView: PhotoView, effect: ViewerActivity.SlideEffect, duration: Long) {
+        val interpolator = DecelerateInterpolator()
 
         try {
             when (effect) {
-                SlideEffect.TRANSLATE -> {
+                ViewerActivity.SlideEffect.TRANSLATE -> {
+                    val dx = 15f
+                    val dy = 15f
+                    photoView.translationX = 0f
+                    photoView.translationY = 0f
                     photoView.animate()
-                        .translationX(20f).translationY(20f)
+                        .translationX(dx)
+                        .translationY(dy)
                         .setDuration(duration)
                         .setInterpolator(interpolator)
                         .withEndAction {
@@ -619,9 +686,13 @@ class ViewerActivity : AppCompatActivity() {
                         }.start()
                 }
 
-                SlideEffect.ZOOM -> {
+                ViewerActivity.SlideEffect.ZOOM -> {
+                    val scale = 1.05f
+                    photoView.scaleX = 1f
+                    photoView.scaleY = 1f
                     photoView.animate()
-                        .scaleX(1.08f).scaleY(1.08f)
+                        .scaleX(scale)
+                        .scaleY(scale)
                         .setDuration(duration)
                         .setInterpolator(interpolator)
                         .withEndAction {
@@ -630,8 +701,8 @@ class ViewerActivity : AppCompatActivity() {
                         }.start()
                 }
 
-                SlideEffect.FADE -> {
-                    photoView.alpha = 0f
+                ViewerActivity.SlideEffect.FADE -> {
+                    photoView.alpha = 0.85f
                     photoView.animate()
                         .alpha(1f)
                         .setDuration(duration)
@@ -639,18 +710,13 @@ class ViewerActivity : AppCompatActivity() {
                         .start()
                 }
 
-                SlideEffect.ROTATE -> {
+                ViewerActivity.SlideEffect.SCALE -> {
+                    val scale = 0.96f
+                    photoView.scaleX = 1f
+                    photoView.scaleY = 1f
                     photoView.animate()
-                        .rotationBy(360f)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .withEndAction { photoView.rotation = 0f }
-                        .start()
-                }
-
-                SlideEffect.SCALE -> {
-                    photoView.animate()
-                        .scaleX(0.92f).scaleY(0.92f)
+                        .scaleX(scale)
+                        .scaleY(scale)
                         .setDuration(duration)
                         .setInterpolator(interpolator)
                         .withEndAction {
@@ -659,62 +725,17 @@ class ViewerActivity : AppCompatActivity() {
                         }.start()
                 }
 
-                SlideEffect.BOUNCE -> {
-                    photoView.translationY = -20f
+                ViewerActivity.SlideEffect.BOUNCE -> {
+                    photoView.translationY = -8f
                     photoView.animate()
                         .translationY(0f)
                         .setDuration(duration)
-                        .setInterpolator(interpolator)
+                        .setInterpolator(BounceInterpolator())
                         .start()
-                }
-
-                SlideEffect.FLIP_HORIZONTAL -> {
-                    photoView.rotationY = -90f
-                    photoView.animate()
-                        .rotationY(0f)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .start()
-                }
-
-                SlideEffect.FLIP_VERTICAL -> {
-                    photoView.rotationX = -90f
-                    photoView.animate()
-                        .rotationX(0f)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .start()
-                }
-
-                SlideEffect.ROTATE_SCALE -> {
-                    photoView.scaleX = 1.12f
-                    photoView.scaleY = 1.12f
-                    photoView.rotation = 15f
-                    photoView.animate()
-                        .scaleX(1f)
-                        .scaleY(1f)
-                        .rotation(0f)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .start()
-                }
-
-                SlideEffect.SHADOW -> {
-                    photoView.translationZ = 10f
-                    photoView.animate()
-                        .translationZ(0f)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .start()
-                }
-
-                // 🔹 En caso de que se agregue un nuevo efecto en el futuro
-                else -> {
-                    // Sin animación, evita crash en builds antiguos
                 }
             }
         } catch (e: Exception) {
-            // Previene cierres inesperados en TV de bajos recursos
+            // Protege TV de bajo rendimiento
         }
     }
 
@@ -724,43 +745,35 @@ class ViewerActivity : AppCompatActivity() {
         try {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val folderPath = prefs.getString(KEY_AUDIO_FOLDER, null)
-
             if (folderPath.isNullOrEmpty()) {
-                Log.d("AudioDebug", "No hay carpeta de audios guardada")
                 audioUris = emptyList()
                 return
             }
 
             val audioFolder = File(folderPath)
-            Log.d("AudioDebug", "Carpeta de audios guardada: $folderPath")
-
             if (!audioFolder.exists() || !audioFolder.isDirectory) {
-                Log.d("AudioDebug", "La carpeta guardada no existe o no es un directorio")
+
                 audioUris = emptyList()
                 return
             }
-
             val children = audioFolder.listFiles()
             if (children == null) {
-                Log.d("AudioDebug", "No se pudieron listar los archivos de la carpeta")
                 audioUris = emptyList()
                 return
             }
 
-            Log.d("AudioDebug", "Archivos encontrados en la carpeta: ${children.joinToString { it.name }}")
+
 
             audioUris = children
                 .filter { it.isFile && (it.extension.equals("mp3", true) || it.extension.equals("wav", true) || it.extension.equals("m4a", true)) }
                 .map { Uri.fromFile(it) }
-
             if (audioUris.isEmpty()) {
-                Log.d("AudioDebug", "No se encontraron audios compatibles en la carpeta")
             } else {
-                Log.d("AudioDebug", "Audios cargados: ${audioUris.joinToString { it.toString() }}")
+
             }
 
         } catch (e: Exception) {
-            Log.e("AudioDebug", "Error cargando carpeta de audios", e)
+
             audioUris = emptyList()
         }
     }
@@ -768,27 +781,22 @@ class ViewerActivity : AppCompatActivity() {
     private fun playRandomAudioContinuously() {
         try {
             if (audioUris.isEmpty()) {
-                Log.d("AudioDebug", "Lista de audios vacía, no se puede reproducir")
+
                 Toast.makeText(this, "No hay audios para reproducir", Toast.LENGTH_SHORT).show()
                 return
             }
-
             // Detener audio anterior
             audioPlayer?.release()
             audioPlayer = null
-
             val randomUri = audioUris.random()
-            Log.d("AudioDebug", "Reproduciendo audio: $randomUri")
             Toast.makeText(this, "Reproduciendo: ${randomUri.lastPathSegment}", Toast.LENGTH_SHORT).show()
-
             audioPlayer = ExoPlayer.Builder(this).build().apply {
                 setMediaItem(MediaItem.fromUri(randomUri))
                 prepare()
                 play()
-
                 addListener(object : androidx.media3.common.Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
-                        Log.d("AudioDebug", "Estado del reproductor: $state")
+
                         if (state == ExoPlayer.STATE_ENDED) {
                             if (slideRunning.get()) {
                                 playRandomAudioContinuously()
@@ -800,7 +808,6 @@ class ViewerActivity : AppCompatActivity() {
 
         } catch (e: Exception) {
             e.printStackTrace()
-            Log.e("AudioDebug", "Error reproduciendo audio: ${e.message}")
             Toast.makeText(this, "Error al reproducir audio", Toast.LENGTH_SHORT).show()
         }
     }
