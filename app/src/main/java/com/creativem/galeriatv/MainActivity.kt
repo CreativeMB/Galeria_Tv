@@ -19,7 +19,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.util.Log
 import androidx.recyclerview.widget.GridLayoutManager
 import com.creativem.galeriatv.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
@@ -30,17 +32,22 @@ import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
+    private var audioUris: List<Uri> = emptyList()
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var folderAdapter: FolderAdapter
     private lateinit var gridLayoutManager: GridLayoutManager
-    private var currentFolderFile: File? = null
-    private var selectingDefaultFolder = false
+    var currentFolderFile: File? = null
     private val folderStack = LinkedList<File>()
     private var recyclerWidthMeasured = false
+    private var selectingDefaultFolder = false
+    private var selectingAudioFolder = false
+    private var previousFolderFile: File? = null
 
     companion object {
         private const val PREFS_NAME = "gallery_prefs"
         private const val KEY_DEFAULT_FOLDER = "default_folder_path"
+        private const val KEY_AUDIO_FOLDER = "audio_folder_uri"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,7 +63,39 @@ class MainActivity : AppCompatActivity() {
         initRecycler()
         initMenu()
         checkStoragePermissions()  // Primero pedir permisos
+
+        binding.audiocarpeta.setOnClickListener {
+            if (!selectingAudioFolder) {
+                // Primer toque: iniciar selección de carpeta
+                selectingAudioFolder = true
+                previousFolderFile = currentFolderFile  // Guardar para volver luego
+
+                Toast.makeText(this, "Navega hasta la carpeta de audios y toca nuevamente para guardar", Toast.LENGTH_LONG).show()
+
+                // Mostrar raíz del almacenamiento
+                val roots = getStorageRoots()
+                folderAdapter.submitList(roots)
+                currentFolderFile = null
+
+                // Mostrar botón de seleccionar carpeta
+                binding.selectFolderButton.visibility = View.VISIBLE
+
+            } else {
+                // Segundo toque: usar mismo método que el botón principal
+                selectingDefaultFolder = false
+                selectingAudioFolder = true
+
+                // Ahora el usuario toca el botón de "selectFolderButton" para guardar
+                Toast.makeText(this, "Toca el botón para guardar la carpeta de audios seleccionada", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+
+
     }
+
+
+
 
     private fun hideSystemBars() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -74,16 +113,36 @@ class MainActivity : AppCompatActivity() {
     /** ------------------ ADAPTER Y RECYCLER ------------------ **/
 
     private fun initAdapter() {
-        folderAdapter = FolderAdapter(this) { fileItem, isFolder ->
-            if (selectingDefaultFolder) {
-                if (isFolder) saveDefaultFolder(fileItem.file)
-                else Toast.makeText(this, "Selecciona una carpeta, no un archivo", Toast.LENGTH_SHORT).show()
-            } else {
-                if (isFolder) loadFolder(fileItem.file)
-                else openFile(fileItem.file)
+        folderAdapter = FolderAdapter(
+            this,
+            onItemClick = { fileItem, isFolder ->
+                when {
+                    // Si está seleccionando carpeta principal o de audios
+                    // solo navega (NO guarda todavía)
+                    selectingDefaultFolder || selectingAudioFolder -> {
+                        if (isFolder) {
+                            loadFolder(fileItem.file)
+                        } else {
+                            Toast.makeText(this, "Selecciona una carpeta, no un archivo", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    // Si es el ítem especial para carpeta de audios
+                    fileItem.isAudioFolderItem -> {
+                        openAudioFolderNavigator()
+                    }
+
+                    // Navegación normal
+                    else -> {
+                        if (isFolder) loadFolder(fileItem.file)
+                        else openFile(fileItem.file)
+                    }
+                }
             }
-        }
+        )
+        binding.recyclerView.adapter = folderAdapter
     }
+
 
     private fun initRecycler() {
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
@@ -111,6 +170,7 @@ class MainActivity : AppCompatActivity() {
     /** ------------------ MENÚ Y CONFIGURACIÓN ------------------ **/
 
     private fun initMenu() {
+        // Menú superior
         binding.imgMenu.setOnClickListener {
             val popup = androidx.appcompat.widget.PopupMenu(this, binding.imgMenu)
             popup.menuInflater.inflate(R.menu.top_menu, popup.menu)
@@ -124,14 +184,106 @@ class MainActivity : AppCompatActivity() {
             popup.show()
         }
 
+        // Botón para guardar carpeta seleccionada (principal o de audio)
         binding.selectFolderButton.setOnClickListener {
             val selected = folderAdapter.getSelectedFolder()
-            if (selected != null) saveDefaultFolder(selected)
-            else Toast.makeText(this, "Primero selecciona una carpeta", Toast.LENGTH_SHORT).show()
+            if (selected != null && selected.isDirectory) {
+
+                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+                when {
+                    selectingDefaultFolder -> {
+                        // Guardar carpeta principal
+                        prefs.edit()
+                            .putString(KEY_DEFAULT_FOLDER, selected.absolutePath)
+                            .apply()
+                        Toast.makeText(this, "Carpeta principal guardada", Toast.LENGTH_SHORT).show()
+
+                        // Actualizar estado de la app
+                        folderStack.clear()
+                        folderStack.add(selected)
+                        currentFolderFile = selected
+                        loadFolder(selected, saveAsCurrent = true, addToStack = false)
+                    }
+
+                    selectingAudioFolder -> {
+                        // Guardar carpeta de audios (con path en vez de Uri)
+                        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                            .putString(KEY_AUDIO_FOLDER, selected.absolutePath)
+                            .apply()
+                        Toast.makeText(this, "Carpeta de audios guardada", Toast.LENGTH_SHORT).show()
+
+                        // Volver a la carpeta principal
+                        previousFolderFile?.let { folder ->
+                            currentFolderFile = folder
+                            loadFolder(folder, saveAsCurrent = true, addToStack = false)
+                        }
+                    }
+
+                }
+
+                // Resetear banderas y ocultar botón
+                selectingDefaultFolder = false
+                selectingAudioFolder = false
+                binding.selectFolderButton.visibility = View.GONE
+
+            } else {
+                Toast.makeText(this, "Primero selecciona una carpeta válida", Toast.LENGTH_SHORT).show()
+            }
         }
 
+        // Otros botones de configuración
         binding.imgConfig.setOnClickListener { showImageConfigDialog() }
         binding.imgFilas.setOnClickListener { showColumnSelectionDialog() }
+    }
+    private fun loadDefaultFolderOrPicker() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val mainPath = prefs.getString(KEY_DEFAULT_FOLDER, null)
+        val audioPath = prefs.getString(KEY_AUDIO_FOLDER, null)
+
+        if (mainPath != null) {
+            val folder = File(mainPath)
+            if (folder.exists()) {
+                if (folderStack.isEmpty()) folderStack.add(folder)
+                currentFolderFile = folder
+                loadFolder(folder, saveAsCurrent = true, addToStack = false)
+                binding.selectFolderButton.visibility = View.GONE
+            } else openFolderPicker()
+        } else openFolderPicker()
+
+        // ✅ Mostrar si ya hay carpeta de audios guardada
+        if (audioPath != null) {
+            val audioFolder = File(audioPath)
+            if (!audioFolder.exists()) {
+                Toast.makeText(this, "La carpeta de audios ya no existe", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun openFolderPicker() {
+        selectingDefaultFolder = true
+        selectingAudioFolder = false
+
+        val roots = getStorageRoots()
+        if (roots.isEmpty()) {
+            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        folderAdapter.submitList(roots)
+        binding.selectFolderButton.visibility = View.VISIBLE
+        Toast.makeText(this, "Selecciona la carpeta principal", Toast.LENGTH_SHORT).show()
+    }
+
+
+    // Abrir selector para carpeta de audios
+    private fun openAudioFolderNavigator() {
+        selectingAudioFolder = true
+        previousFolderFile = currentFolderFile ?: folderStack.lastOrNull()
+        val roots = getStorageRoots()
+        folderAdapter.submitList(roots)
+        binding.selectFolderButton.visibility = View.VISIBLE
+        Toast.makeText(this, "Navega y selecciona la carpeta de audios", Toast.LENGTH_SHORT).show()
     }
 
     private fun showColumnSelectionDialog() {
@@ -187,12 +339,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun loadFolder(folder: File, saveAsCurrent: Boolean = true, addToStack: Boolean = true) {
-        if (!selectingDefaultFolder && saveAsCurrent) currentFolderFile = folder
-        if (addToStack && !selectingDefaultFolder && (folderStack.isEmpty() || folderStack.last != folder)) folderStack.add(folder)
+        if (saveAsCurrent) currentFolderFile = folder
+        if (addToStack && (folderStack.isEmpty() || folderStack.last != folder)) folderStack.add(folder)
+
         folderAdapter.markFolderAsVisited(folder)
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val children = UriHelper.listFiles(folder)
+            val children = UriHelper.listFiles(folder).toMutableList()
+
+            // ✅ Ya no agregamos el item falso de "Seleccionar carpeta de audios"
+
             val sorted = children.sortedWith(
                 compareBy<FileItem> {
                     when {
@@ -203,14 +359,16 @@ class MainActivity : AppCompatActivity() {
                     }
                 }.thenByDescending { it.file.lastModified() }
             )
+
             withContext(Dispatchers.Main) {
                 folderAdapter.submitList(sorted)
-                if (!selectingDefaultFolder && binding.recyclerView.childCount > 0) {
+                if (binding.recyclerView.childCount > 0) {
                     binding.recyclerView.post { binding.recyclerView.getChildAt(0)?.requestFocus() }
                 }
             }
         }
     }
+
 
     private fun getStorageRoots(): List<FileItem> {
         val roots = mutableListOf<FileItem>()
@@ -266,7 +424,7 @@ class MainActivity : AppCompatActivity() {
 
         when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                val perms = arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+                val perms = arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO,  Manifest.permission.READ_MEDIA_AUDIO)
                 if (perms.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
                     loadDefaultFolderOrPicker()
                 } else {
@@ -325,37 +483,6 @@ class MainActivity : AppCompatActivity() {
         }
         Toast.makeText(this, "Concede el permiso y vuelve a abrir la app", Toast.LENGTH_LONG).show()
     }
-
-
-    /** ------------------ CARGA CARPETA DEFAULT ------------------ **/
-
-    private fun loadDefaultFolderOrPicker() {
-        val path = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_DEFAULT_FOLDER,null)
-        if (path!=null) {
-            val folder = File(path)
-            if (folder.exists()) {
-                if (folderStack.isEmpty()) folderStack.add(folder)
-                currentFolderFile = folder
-                loadFolder(folder, saveAsCurrent=true, addToStack=false)
-                binding.selectFolderButton.visibility = View.GONE
-            } else openFolderPicker()
-        } else openFolderPicker()
-    }
-
-    private fun openFolderPicker() {
-        val roots = getStorageRoots()
-        if (roots.isEmpty()) {
-            Toast.makeText(this,"No se encontraron unidades de almacenamiento",Toast.LENGTH_SHORT).show()
-            return
-        }
-        folderAdapter.submitList(roots)
-        if (folderStack.isEmpty()) {
-            folderStack.addAll(roots.map { it.file })
-            currentFolderFile = roots.firstOrNull()?.file
-        }
-    }
-
-    /** ------------------ INFO Y PROYECTOS ------------------ **/
 
     private fun mostrarInfoApp() {
         AlertDialog.Builder(this)

@@ -57,12 +57,12 @@
 
         <!-- Icono Buscar -->
         <ImageView
-            android:id="@+id/imgBuscar"
+            android:id="@+id/audiocarpeta"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_marginVertical="4dp"
             android:padding="8dp"
-            android:src="@drawable/icono"
+            android:src="@drawable/outline_audio_file_24"
             android:contentDescription="Buscar"
             android:background="@drawable/item_background_selector" />
 

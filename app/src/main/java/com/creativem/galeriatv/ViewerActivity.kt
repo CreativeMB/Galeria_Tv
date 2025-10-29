@@ -21,7 +21,9 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.documentfile.provider.DocumentFile
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -32,6 +34,8 @@ import com.creativem.galeriatv.databinding.ActivityViewerBinding
 import com.github.chrisbanes.photoview.PhotoView
 import jp.wasabeef.glide.transformations.BlurTransformation
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.lang.Exception
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -46,6 +50,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - Evita múltiples postDelayed encolados.
  */
 class ViewerActivity : AppCompatActivity() {
+
+    private var audioFiles: List<File> = emptyList()
+    private var audioPlayer: ExoPlayer? = null
+    private var currentAudioIndex = 0
+    private var shuffleAudio = true
+
+
 
     private lateinit var binding: ActivityViewerBinding
 
@@ -91,6 +102,8 @@ class ViewerActivity : AppCompatActivity() {
     companion object {
         private const val EXTRA_FILE_URI = "extra_file_uri"
         private const val EXTRA_FOLDER_PATH = "extra_folder_path"
+        private const val PREFS_NAME = "gallery_prefs"
+        private const val KEY_AUDIO_FOLDER = "audio_folder_uri"
 
         fun start(context: Context, fileUri: Uri, folderPath: String) {
             val intent = Intent(context, ViewerActivity::class.java)
@@ -163,6 +176,7 @@ class ViewerActivity : AppCompatActivity() {
 
         // focus y accesibilidad básica
         setupFocusHighlight()
+        loadAudioFolder()
 
         // arrancar mostrando el archivo actual (no iniciar slideshow hasta que se muestre)
         showMedia(currentIndex)
@@ -257,6 +271,8 @@ class ViewerActivity : AppCompatActivity() {
                 binding.photoViewContainer.addView(photoView)
                 photoView?.visibility = View.VISIBLE
 
+
+
                 val picMaxDim = calculateTargetImageSize()
                 Glide.with(this)
                     .asBitmap()
@@ -265,6 +281,9 @@ class ViewerActivity : AppCompatActivity() {
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                     .thumbnail(0.15f)
                     .into(photoView!!)
+
+
+
 
                 val hasMoreImages = mediaFiles.drop(currentIndex + 1).any { !isVideo(it) }
 
@@ -305,54 +324,52 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     private fun startSlideShowSafe(intervalMs: Long, effects: List<SlideEffect>, random: Boolean) {
-        // si ya corre, no iniciar otra vez
         if (slideRunning.get()) return
+
+        // Iniciar audio solo una vez al inicio
+        playRandomAudioContinuously()
 
         slideRunnable = object : Runnable {
             override fun run() {
-                try {
-                    val advanced = advanceToNextImage()
-                    if (!advanced) {
-                        // fin de presentación
-                        slideRunning.set(false)
-                        binding.txtFileName.text = "Fin de la presentación"
-                        return
-                    }
+                val advanced = advanceToNextImage()
+                if (!advanced) {
+                    // fin de presentación
+                    slideRunning.set(false)
+                    binding.txtFileName.text = "Fin de la presentación"
 
-                    val currentFile = mediaFiles[currentIndex]
-
-                    // Cargar en photoView reutilizable (sin crear nuevas vistas)
-                    Glide.with(this@ViewerActivity)
-                        .asBitmap()
-                        .load(currentFile)
-                        .override(calculateTargetImageSize(), calculateTargetImageSize())
-                        .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
-                        .thumbnail(0.15f)
-                        .into(photoView!!)
-
-                    // Actualizar blur background pero con throttling (cada X slides) para ahorrar CPU
-                    updateBlurBackgroundOptimized(currentFile)
-
-                    // Animaciones ligeras: fade-in para suavizar cambio
-                    photoView?.alpha = 0f
-                    photoView?.animate()?.alpha(1f)?.setDuration(500)?.start()
-
-                    // aplicar efecto ligero
-                    val effect = if (random) effects.random() else effects.first()
-                    applyEffect(photoView!!, effect)
-
-                } catch (e: Exception) {
-                    // proteger contra errores nativos
-                } finally {
-                    // reprogramar solo si activity no finishing y slide sigue true
-                    if (!isFinishing && slideRunning.get()) handler.postDelayed(this, intervalMs)
+                    // Detener audio al final
+                    audioPlayer?.stop()
+                    audioPlayer?.release()
+                    audioPlayer = null
+                    return
                 }
+
+                val currentFile = mediaFiles[currentIndex]
+
+                Glide.with(this@ViewerActivity)
+                    .asBitmap()
+                    .load(currentFile)
+                    .override(calculateTargetImageSize(), calculateTargetImageSize())
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    .thumbnail(0.15f)
+                    .into(photoView!!)
+
+                updateBlurBackgroundOptimized(currentFile)
+
+                photoView?.alpha = 0f
+                photoView?.animate()?.alpha(1f)?.setDuration(500)?.start()
+
+                val effect = if (random) effects.random() else effects.first()
+                applyEffect(photoView!!, effect)
+
+                if (!isFinishing && slideRunning.get()) handler.postDelayed(this, intervalMs)
             }
         }
 
         slideRunning.set(true)
         slideRunnable?.let { handler.postDelayed(it, intervalMs) }
     }
+
 
     private fun advanceToNextImage(): Boolean {
         var next = currentIndex + 1
@@ -484,6 +501,9 @@ class ViewerActivity : AppCompatActivity() {
         } finally {
             playerView?.visibility = View.GONE
         }
+        audioPlayer?.release()
+        audioPlayer = null
+
     }
 
     private fun finishSafely() {
@@ -697,5 +717,94 @@ class ViewerActivity : AppCompatActivity() {
             // Previene cierres inesperados en TV de bajos recursos
         }
     }
+
+    private var audioUris: List<Uri> = emptyList()
+
+    private fun loadAudioFolder() {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val folderPath = prefs.getString(KEY_AUDIO_FOLDER, null)
+
+            if (folderPath.isNullOrEmpty()) {
+                Log.d("AudioDebug", "No hay carpeta de audios guardada")
+                audioUris = emptyList()
+                return
+            }
+
+            val audioFolder = File(folderPath)
+            Log.d("AudioDebug", "Carpeta de audios guardada: $folderPath")
+
+            if (!audioFolder.exists() || !audioFolder.isDirectory) {
+                Log.d("AudioDebug", "La carpeta guardada no existe o no es un directorio")
+                audioUris = emptyList()
+                return
+            }
+
+            val children = audioFolder.listFiles()
+            if (children == null) {
+                Log.d("AudioDebug", "No se pudieron listar los archivos de la carpeta")
+                audioUris = emptyList()
+                return
+            }
+
+            Log.d("AudioDebug", "Archivos encontrados en la carpeta: ${children.joinToString { it.name }}")
+
+            audioUris = children
+                .filter { it.isFile && (it.extension.equals("mp3", true) || it.extension.equals("wav", true) || it.extension.equals("m4a", true)) }
+                .map { Uri.fromFile(it) }
+
+            if (audioUris.isEmpty()) {
+                Log.d("AudioDebug", "No se encontraron audios compatibles en la carpeta")
+            } else {
+                Log.d("AudioDebug", "Audios cargados: ${audioUris.joinToString { it.toString() }}")
+            }
+
+        } catch (e: Exception) {
+            Log.e("AudioDebug", "Error cargando carpeta de audios", e)
+            audioUris = emptyList()
+        }
+    }
+
+    private fun playRandomAudioContinuously() {
+        try {
+            if (audioUris.isEmpty()) {
+                Log.d("AudioDebug", "Lista de audios vacía, no se puede reproducir")
+                Toast.makeText(this, "No hay audios para reproducir", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            // Detener audio anterior
+            audioPlayer?.release()
+            audioPlayer = null
+
+            val randomUri = audioUris.random()
+            Log.d("AudioDebug", "Reproduciendo audio: $randomUri")
+            Toast.makeText(this, "Reproduciendo: ${randomUri.lastPathSegment}", Toast.LENGTH_SHORT).show()
+
+            audioPlayer = ExoPlayer.Builder(this).build().apply {
+                setMediaItem(MediaItem.fromUri(randomUri))
+                prepare()
+                play()
+
+                addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onPlaybackStateChanged(state: Int) {
+                        Log.d("AudioDebug", "Estado del reproductor: $state")
+                        if (state == ExoPlayer.STATE_ENDED) {
+                            if (slideRunning.get()) {
+                                playRandomAudioContinuously()
+                            }
+                        }
+                    }
+                })
+            }
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("AudioDebug", "Error reproduciendo audio: ${e.message}")
+            Toast.makeText(this, "Error al reproducir audio", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+
 
 }
