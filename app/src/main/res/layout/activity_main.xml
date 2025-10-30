@@ -22,6 +22,21 @@
         android:clipChildren="false"
         android:descendantFocusability="afterDescendants">
 
+        <!-- ✅ 1. AÑADIMOS EL TEXTVIEW PARA EL NOMBRE DE LA CARPETA AQUÍ -->
+        <TextView
+            android:id="@+id/currentFolderName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Galería TV"
+            android:textColor="@android:color/white"
+            android:textSize="30sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"/>
+
         <!-- Botón seleccionar carpeta -->
         <Button
             android:id="@+id/selectFolderButton"

@@ -271,7 +271,8 @@ class MainActivity : AppCompatActivity() {
     private fun openFolderPicker() {
         selectingDefaultFolder = true
         selectingAudioFolder = false
-
+        // ✅ Actualiza el título para el selector de raíz
+        binding.currentFolderName.text = "Seleccionar unidad"
         val roots = getStorageRoots()
         if (roots.isEmpty()) {
             Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT).show()
@@ -288,6 +289,9 @@ class MainActivity : AppCompatActivity() {
     private fun openAudioFolderNavigator() {
         selectingAudioFolder = true
         previousFolderFile = currentFolderFile ?: folderStack.lastOrNull()
+
+        // ✅ Actualiza el título para el selector de raíz
+        binding.currentFolderName.text = "Seleccionar carpeta de audio"
         val roots = getStorageRoots()
         folderAdapter.submitList(roots)
         binding.selectFolderButton.visibility = View.VISIBLE
@@ -353,7 +357,7 @@ class MainActivity : AppCompatActivity() {
     fun loadFolder(folder: File, saveAsCurrent: Boolean = true, addToStack: Boolean = true) {
         if (saveAsCurrent) currentFolderFile = folder
         if (addToStack && (folderStack.isEmpty() || folderStack.last != folder)) folderStack.add(folder)
-
+        binding.currentFolderName.text = folder.name
         folderAdapter.markFolderAsVisited(folder)
 
         // Inicia la corrutina en el hilo de I/O para trabajo pesado
