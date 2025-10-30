@@ -25,15 +25,6 @@ import com.github.chrisbanes.photoview.PhotoView
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * ViewerActivity optimizada para TV de bajos recursos.
- *
- * Principales cambios:
- *  - Reutiliza dos PhotoView para crear un efecto de carrusel continuo y sin espacios.
- *  - Carga imágenes en baja resolución para usar menos memoria.
- *  - Detecta desconexión de unidad y maneja errores de IO.
- *  - Evita múltiples postDelayed encolados.
- */
 class ViewerActivity : AppCompatActivity() {
 
     private var audioPlayer: ExoPlayer? = null
@@ -41,14 +32,12 @@ class ViewerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityViewerBinding
 
-    // Player y vistas reutilizables
     private var exoPlayer: ExoPlayer? = null
     private var playerView: PlayerView? = null
 
-    // --- Dos PhotoView para el carrusel continuo ---
     private var photoView1: PhotoView? = null
     private var photoView2: PhotoView? = null
-    private var isPhotoView1Active = true // Controla cuál PhotoView está visible
+    private var isPhotoView1Active = true
 
     private var mediaFiles: List<File> = emptyList()
     private var currentIndex = 0
@@ -68,7 +57,7 @@ class ViewerActivity : AppCompatActivity() {
                 }
                 if (!isFinishing && exoPlayer != null) handler.postDelayed(this, 500)
             } catch (e: Exception) {
-                // proteger contra errores del player
+                // proteger
             }
         }
     }
@@ -135,11 +124,9 @@ class ViewerActivity : AppCompatActivity() {
         } catch (e: SecurityException) {
             Toast.makeText(this, "No hay permiso para acceder a la carpeta", Toast.LENGTH_SHORT).show()
             finish()
-            return
         } catch (e: Exception) {
             Toast.makeText(this, "Error al listar archivos", Toast.LENGTH_SHORT).show()
             finish()
-            return
         }
 
         val selectedFile = try { File(Uri.parse(fileUriString).path!!) } catch (e: Exception) { null }
@@ -171,7 +158,6 @@ class ViewerActivity : AppCompatActivity() {
         binding.photoViewContainer.addView(photoView1)
         binding.photoViewContainer.addView(photoView2)
 
-
         playerView = PlayerView(this).apply {
             useController = false
             layoutParams = android.view.ViewGroup.LayoutParams(
@@ -196,7 +182,7 @@ class ViewerActivity : AppCompatActivity() {
         val file = mediaFiles[index]
 
         binding.photoViewContainer.removeAllViews()
-        releasePlayer()
+        releaseVideoPlayer() // Detiene solo el video si se estaba reproduciendo
         cancelSlideRunnable()
 
         binding.videoCenterIcon.visibility = View.GONE
@@ -222,18 +208,13 @@ class ViewerActivity : AppCompatActivity() {
                 exoPlayer?.addListener(object : androidx.media3.common.Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == ExoPlayer.STATE_ENDED) {
-                            if (currentIndex >= mediaFiles.lastIndex) {
-                                releasePlayer()
-                                binding.txtFileName.text = "Último video"
-                            } else {
-                                nextMediaVideo()
-                            }
+                            nextMediaVideo()
                         }
                     }
                 })
             } catch (e: Exception) {
                 Toast.makeText(this, "Error al reproducir video", Toast.LENGTH_SHORT).show()
-                if (currentIndex < mediaFiles.lastIndex) nextMediaVideo() else releasePlayer()
+                nextMediaVideo()
             }
         } else {
             try {
@@ -257,17 +238,7 @@ class ViewerActivity : AppCompatActivity() {
                     .thumbnail(0.15f)
                     .into(activeView)
 
-                val hasMoreImages = mediaFiles.drop(currentIndex + 1).any { !isVideo(it) }
-
-                if (hasMoreImages) {
-                    val intervalSec = loadSlideShowPreferences()
-                    startSlideShowSafe(intervalSec * 1000L)
-                } else {
-                    binding.txtFileName.text = "Última imagen"
-                    cancelSlideRunnable()
-                }
-
-                updatePlayPauseUI(true)
+                // No iniciar slideshow automáticamente al mostrar, solo con botón de play
             } catch (e: Exception) {
                 Toast.makeText(this, "Error al mostrar imagen", Toast.LENGTH_SHORT).show()
             }
@@ -308,6 +279,7 @@ class ViewerActivity : AppCompatActivity() {
                     audioPlayer?.stop()
                     audioPlayer?.release()
                     audioPlayer = null
+                    isAudioPlayingForSlideShow = false
                     return
                 }
 
@@ -318,7 +290,6 @@ class ViewerActivity : AppCompatActivity() {
                 Glide.with(this@ViewerActivity)
                     .asBitmap()
                     .load(nextFile)
-                    // --- CORRECCIÓN AQUÍ ---
                     .override(calculateTargetImageSize(), calculateTargetImageSize())
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                     .thumbnail(0.15f)
@@ -368,10 +339,11 @@ class ViewerActivity : AppCompatActivity() {
 
     @UnstableApi
     private fun nextMediaVideo() {
-        releasePlayer()
+        releaseVideoPlayer()
         var nextIndex = currentIndex + 1
         while (nextIndex < mediaFiles.size) {
-            if (isVideo(mediaFiles[nextIndex])) {
+            val file = mediaFiles[nextIndex]
+            if (isVideo(file)) {
                 currentIndex = nextIndex
                 showMedia(currentIndex)
                 return
@@ -386,22 +358,18 @@ class ViewerActivity : AppCompatActivity() {
 
         if (isVideo(file)) {
             exoPlayer?.let { player ->
-                if (player.isPlaying) {
-                    player.pause()
-                    updatePlayPauseUI(false)
-                } else {
-                    player.play()
-                    updatePlayPauseUI(true)
-                }
+                if (player.isPlaying) player.pause() else player.play()
+                updatePlayPauseUI(player.isPlaying)
             }
         } else {
-            if (!slideRunning.get()) {
+            if (slideRunning.get()) {
+                cancelSlideRunnable()
+                audioPlayer?.pause()
+                updatePlayPauseUI(false)
+            } else {
                 val intervalSec = loadSlideShowPreferences()
                 startSlideShowSafe(intervalSec * 1000L)
                 updatePlayPauseUI(true)
-            } else {
-                cancelSlideRunnable()
-                updatePlayPauseUI(false)
             }
         }
     }
@@ -410,7 +378,6 @@ class ViewerActivity : AppCompatActivity() {
         binding.btnPlayPause.setImageResource(
             if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         )
-        // Corrección para no mostrar el ícono de play sobre las imágenes
         val isCurrentlyVideo = isVideo(mediaFiles.getOrNull(currentIndex) ?: return)
         binding.videoCenterIcon.visibility = if (isCurrentlyVideo && !isPlaying) View.VISIBLE else View.GONE
     }
@@ -421,7 +388,8 @@ class ViewerActivity : AppCompatActivity() {
         return Math.min(1080, Math.max(720, (screenShort * 0.8).toInt()))
     }
 
-    private fun releasePlayer() {
+    // --- CAMBIO: Nueva función para liberar solo el reproductor de video ---
+    private fun releaseVideoPlayer() {
         try {
             playerView?.player = null
             exoPlayer?.release()
@@ -432,8 +400,14 @@ class ViewerActivity : AppCompatActivity() {
         } finally {
             playerView?.visibility = View.GONE
         }
+    }
+
+    // --- CAMBIO: releasePlayer ahora usa releaseVideoPlayer y además detiene el audio ---
+    private fun releasePlayer() {
+        releaseVideoPlayer()
         audioPlayer?.release()
         audioPlayer = null
+        isAudioPlayingForSlideShow = false
     }
 
     private fun finishSafely() {
@@ -442,61 +416,78 @@ class ViewerActivity : AppCompatActivity() {
         if (!isFinishing) finish()
     }
 
+
+    // --- CAMBIO: Lógica de KeyDown completamente reestructurada ---
+    @UnstableApi
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> {
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 advanceOrNext()
-                hideBottomBarIfVisible()
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> {
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
                 previousOrPrevious()
-                hideBottomBarIfVisible()
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                toggleBottomBarVisibility() // Nueva función para mostrar/ocultar la barra
                 return true
             }
             KeyEvent.KEYCODE_DPAD_CENTER -> {
-                toggleBottomBar()
+                // Si la barra está visible, el OK lo recibe el botón de play/pause.
+                // Si no, lo usamos para alternar la reproducción.
+                if (binding.bottomBar.visibility == View.VISIBLE) {
+                    binding.btnPlayPause.callOnClick()
+                } else {
+                    togglePlayback()
+                }
                 return true
             }
             else -> return super.onKeyDown(keyCode, event)
         }
     }
 
+    // --- CAMBIO: Esta función ahora solo muestra/oculta la barra de control ---
+    private fun toggleBottomBarVisibility() {
+        val isVisible = binding.bottomBar.visibility == View.VISIBLE
+        binding.bottomBar.visibility = if (isVisible) View.GONE else View.VISIBLE
+        if (isVisible) {
+            // Si se oculta, el foco debe ir a un contenedor principal para que no se pierda
+            binding.photoViewContainer.requestFocus()
+        } else {
+            // Si se muestra, el foco va al botón
+            binding.btnPlayPause.requestFocus()
+        }
+    }
+
+
+    // --- CAMBIO: Estas funciones ahora usan releaseVideoPlayer para no detener el audio ---
     @UnstableApi
     private fun previousOrPrevious() {
         cancelSlideRunnable()
-        releasePlayer()
+        releaseVideoPlayer() // Solo detiene el video
         if (mediaFiles.isEmpty()) return
-        currentIndex = if (currentIndex - 1 < 0) mediaFiles.size - 1 else currentIndex - 1
+
+        var prevIndex = currentIndex - 1
+        if (prevIndex < 0) prevIndex = mediaFiles.size - 1
+
+        currentIndex = prevIndex
         showMedia(currentIndex)
     }
 
     @UnstableApi
     private fun advanceOrNext() {
         cancelSlideRunnable()
-        val file = mediaFiles.getOrNull(currentIndex) ?: return
-        if (isVideo(file)) {
-            nextMediaVideo()
-        } else {
-            if (advanceToNextImage()) {
-                showMedia(currentIndex)
-            } else {
-                binding.txtFileName.text = "Última imagen"
-            }
-        }
+        releaseVideoPlayer() // Solo detiene el video
+        if (mediaFiles.isEmpty()) return
+
+        var nextIndex = currentIndex + 1
+        if (nextIndex >= mediaFiles.size) nextIndex = 0
+
+        currentIndex = nextIndex
+        showMedia(currentIndex)
     }
 
-    private fun hideBottomBarIfVisible() {
-        if (binding.bottomBar.visibility == View.VISIBLE) {
-            binding.bottomBar.visibility = View.GONE
-        }
-    }
-
-    private fun toggleBottomBar() {
-        val bottomBarVisible = binding.bottomBar.visibility == View.VISIBLE
-        binding.bottomBar.visibility = if (bottomBarVisible) View.GONE else View.VISIBLE
-        if (bottomBarVisible) binding.photoViewContainer.requestFocus() else binding.btnPlayPause.requestFocus()
-    }
 
     private fun isVideo(file: File): Boolean {
         return file.extension.lowercase() in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")
@@ -546,13 +537,12 @@ class ViewerActivity : AppCompatActivity() {
     private fun playRandomAudioContinuously() {
         try {
             if (audioUris.isEmpty()) return
-            audioPlayer?.release()
-            val randomUri = audioUris.random()
-            audioPlayer = ExoPlayer.Builder(this).build().apply {
-                setMediaItem(MediaItem.fromUri(randomUri))
-                prepare()
-                play()
-                addListener(object : androidx.media3.common.Player.Listener {
+            // Si ya está sonando, no hacer nada
+            if (audioPlayer?.isPlaying == true) return
+
+            if (audioPlayer == null) {
+                audioPlayer = ExoPlayer.Builder(this).build()
+                audioPlayer?.addListener(object : androidx.media3.common.Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == ExoPlayer.STATE_ENDED && slideRunning.get()) {
                             playRandomAudioContinuously()
@@ -560,6 +550,17 @@ class ViewerActivity : AppCompatActivity() {
                     }
                 })
             }
+
+            // Si está en pausa, reanudar. Si no, empezar de nuevo.
+            if (audioPlayer?.playbackState == ExoPlayer.STATE_READY) {
+                audioPlayer?.play()
+            } else {
+                val randomUri = audioUris.random()
+                audioPlayer?.setMediaItem(MediaItem.fromUri(randomUri))
+                audioPlayer?.prepare()
+                audioPlayer?.play()
+            }
+
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(this, "Error al reproducir audio", Toast.LENGTH_SHORT).show()
