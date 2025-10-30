@@ -1,5 +1,6 @@
 package com.creativem.galeriatv
 
+import StorageReceiver
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -39,6 +40,9 @@ class MainActivity : AppCompatActivity() {
 
     private var audioUris: List<Uri> = emptyList()
 
+    private var storageMissingDialog: AlertDialog? = null
+    private lateinit var storageReceiver: StorageReceiver
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var folderAdapter: FolderAdapter
     private lateinit var gridLayoutManager: GridLayoutManager
@@ -68,7 +72,7 @@ class MainActivity : AppCompatActivity() {
         initRecycler()
         initMenu()
         checkStoragePermissions()  // Primero pedir permisos
-
+        initStorageReceiver()
         binding.audiocarpeta.setOnClickListener {
             if (!selectingAudioFolder) {
                 // Primer toque: iniciar selección de carpeta
@@ -98,9 +102,54 @@ class MainActivity : AppCompatActivity() {
 
 
     }
+    override fun onDestroy() {
+        super.onDestroy()
+        // Desregistra el receiver al destruir la actividad
+        storageReceiver.unregister(this)
+    }
 
+    private fun initStorageReceiver() {
+        storageReceiver = StorageReceiver {
+            // Se ejecuta cuando se conecta o desconecta un USB.
 
+            // Primero, comprobamos si el diálogo de "falta de unidad" está visible.
+            if (storageMissingDialog?.isShowing == true) {
+                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val mainPath = prefs.getString(KEY_DEFAULT_FOLDER, null)
 
+                // Si el diálogo estaba visible, volvemos a comprobar si la carpeta ahora existe.
+                if (mainPath != null && File(mainPath).exists()) {
+                    // ¡Éxito! La unidad se conectó.
+                    storageMissingDialog?.dismiss() // Cierra el diálogo.
+                    storageMissingDialog = null     // Limpia la referencia.
+
+                    Toast.makeText(this, "Unidad detectada. Cargando contenido...", Toast.LENGTH_LONG).show()
+
+                    // Volvemos a ejecutar la lógica de carga inicial.
+                    // Esta vez, encontrará la carpeta y cargará todo.
+                    loadDefaultFolderOrPicker()
+                }
+            }
+            // Si el diálogo no estaba visible (ej: estábamos en el selector de raíz)...
+            else if (folderStack.isEmpty() || currentFolderFile == null) {
+                // ...simplemente actualizamos la lista de unidades.
+                Toast.makeText(this, "Dispositivo de almacenamiento cambiado", Toast.LENGTH_SHORT).show()
+                refreshStorageRoots()
+            }
+        }
+        storageReceiver.register(this)
+    }
+    private fun refreshStorageRoots() {
+        // ✅ Actualiza el título
+        binding.currentFolderName.text = "Seleccionar unidad"
+
+        // Vuelve a cargar las unidades de almacenamiento y las envía al adaptador
+        val roots = getStorageRoots()
+        if (roots.isEmpty()) {
+            Toast.makeText(this, "No se encontraron unidades de almacenamiento", Toast.LENGTH_SHORT).show()
+        }
+        folderAdapter.submitList(roots)
+    }
 
     private fun hideSystemBars() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -247,27 +296,49 @@ class MainActivity : AppCompatActivity() {
     private fun loadDefaultFolderOrPicker() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val mainPath = prefs.getString(KEY_DEFAULT_FOLDER, null)
-        val audioPath = prefs.getString(KEY_AUDIO_FOLDER, null)
 
         if (mainPath != null) {
             val folder = File(mainPath)
             if (folder.exists()) {
+                // La carpeta existe, todo normal. Carga el contenido.
                 if (folderStack.isEmpty()) folderStack.add(folder)
                 currentFolderFile = folder
                 loadFolder(folder, saveAsCurrent = true, addToStack = false)
                 binding.selectFolderButton.visibility = View.GONE
-            } else openFolderPicker()
-        } else openFolderPicker()
+            } else {
+                // La carpeta NO existe, muestra el diálogo de espera.
+                showStorageMissingDialog(mainPath)
+            }
+        } else {
+            // No hay ninguna carpeta guardada, abrimos el selector.
+            openFolderPicker()
+        }
 
-        // ✅ Mostrar si ya hay carpeta de audios guardada
+        // Comprobación de la carpeta de audio.
+        // Esta lógica se ejecutará correctamente cuando se cargue la carpeta principal.
+        val audioPath = prefs.getString(KEY_AUDIO_FOLDER, null)
         if (audioPath != null) {
             val audioFolder = File(audioPath)
             if (!audioFolder.exists()) {
-                Toast.makeText(this, "La carpeta de audios ya no existe", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "La carpeta de audios configurada no está disponible", Toast.LENGTH_SHORT).show()
             }
         }
     }
+    private fun showStorageMissingDialog(path: String) {
+        // Si ya hay un diálogo mostrándose, no hacemos nada
+        if (storageMissingDialog?.isShowing == true) {
+            return
+        }
 
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Unidad no encontrada")
+            .setMessage("La carpeta configurada ($path) no está disponible.\n\nPor favor, conecta la unidad de almacenamiento (USB, disco duro, etc.) que la contiene.")
+            .setCancelable(false) // El usuario no puede cerrarlo
+
+        val dialog = builder.create()
+        storageMissingDialog = dialog // Guardamos la referencia
+        dialog.show()
+    }
     private fun openFolderPicker() {
         selectingDefaultFolder = true
         selectingAudioFolder = false
