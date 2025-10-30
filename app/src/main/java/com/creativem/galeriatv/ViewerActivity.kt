@@ -29,7 +29,7 @@ class ViewerActivity : AppCompatActivity() {
 
     private var audioPlayer: ExoPlayer? = null
     private var isAudioPlayingForSlideShow = false
-
+    private var lastPlayedAudioUri: Uri? = null
     private lateinit var binding: ActivityViewerBinding
 
     private var exoPlayer: ExoPlayer? = null
@@ -555,10 +555,21 @@ class ViewerActivity : AppCompatActivity() {
             if (audioPlayer?.playbackState == ExoPlayer.STATE_READY) {
                 audioPlayer?.play()
             } else {
-                val randomUri = audioUris.random()
-                audioPlayer?.setMediaItem(MediaItem.fromUri(randomUri))
-                audioPlayer?.prepare()
-                audioPlayer?.play()
+                var newRandomUri: Uri?
+                if (audioUris.size > 1) {
+                    do {
+                        newRandomUri = audioUris.random()
+                    } while (newRandomUri == lastPlayedAudioUri)
+                } else {
+                    newRandomUri = audioUris.firstOrNull()
+                }
+
+                if (newRandomUri != null) {
+                    lastPlayedAudioUri = newRandomUri
+                    audioPlayer?.setMediaItem(MediaItem.fromUri(newRandomUri))
+                    audioPlayer?.prepare()
+                    audioPlayer?.play()
+                }
             }
 
         } catch (e: Exception) {
