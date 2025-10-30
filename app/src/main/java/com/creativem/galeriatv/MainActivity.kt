@@ -517,80 +517,34 @@ class MainActivity : AppCompatActivity() {
     /** ------------------ CONFIGURACIÓN DIAPOSITIVAS ------------------ **/
 
     private fun showImageConfigDialog() {
-        val intervals = (1..10).map { "$it s" }.toTypedArray()
-        val effects = ViewerActivity.SlideEffect.values().map { it.name }.toTypedArray()
-        val defaultEffect = "TRANSLATE"
-
+        val intervals = (1..10).map { "$it s" }.toTypedArray() // 1 a 10 segundos
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+
         val builder = AlertDialog.Builder(this)
-        builder.setTitle("Configuración de diapositivas")
+        builder.setTitle("Configuración de intervalo")
 
         val dialogView = layoutInflater.inflate(R.layout.dialog_image_config, null)
         val intervalSpinner = dialogView.findViewById<Spinner>(R.id.spinner_interval)
-        val randomSwitch = dialogView.findViewById<Switch>(R.id.switch_random)
-        val effectsListView = dialogView.findViewById<ListView>(R.id.list_effects)
-        val selectAllBtn = dialogView.findViewById<Button>(R.id.btn_select_all)
-        val clearAllBtn = dialogView.findViewById<Button>(R.id.btn_clear_all)
 
-        // Adaptadores
+        // Configurar adaptador
         intervalSpinner.adapter =
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, intervals)
-        effectsListView.choiceMode = ListView.CHOICE_MODE_MULTIPLE
-        effectsListView.adapter =
-            ArrayAdapter(this, android.R.layout.simple_list_item_multiple_choice, effects)
 
-        // Restaurar preferencias
+        // Restaurar valor guardado (por defecto 3 s)
         intervalSpinner.setSelection(prefs.getInt("slide_interval", 3) - 1)
-        randomSwitch.isChecked = prefs.getBoolean("slide_random", true)
-
-        // Recuperar efectos guardados en orden
-        val savedEffectsString = prefs.getString("slide_effects_ordered", defaultEffect)
-        val savedEffects = savedEffectsString?.split(",") ?: listOf(defaultEffect)
-
-        // Marcar en el ListView
-        effects.forEachIndexed { index, e ->
-            if (savedEffects.contains(e)) effectsListView.setItemChecked(index, true)
-        }
-
-        // Botón seleccionar todos
-        selectAllBtn?.setOnClickListener {
-            for (i in effects.indices) effectsListView.setItemChecked(i, true)
-        }
-
-        // Botón limpiar selección
-        clearAllBtn?.setOnClickListener {
-            for (i in effects.indices) effectsListView.setItemChecked(i, false)
-        }
 
         builder.setView(dialogView)
 
         builder.setPositiveButton("Aceptar") { _, _ ->
             val selectedInterval = intervalSpinner.selectedItemPosition + 1
-            val randomMode = randomSwitch.isChecked
-
-            // Guardar efectos seleccionados en orden de aparición en la lista
-            val selectedEffects = mutableListOf<String>()
-            for (i in effects.indices) {
-                if (effectsListView.isItemChecked(i)) selectedEffects.add(effects[i])
-            }
-
-            // Si no selecciona ninguno, usar el predeterminado
-            if (selectedEffects.isEmpty()) selectedEffects.add(defaultEffect)
-
-            // Guardar intervalos, modo y efectos ordenados
             prefs.edit()
                 .putInt("slide_interval", selectedInterval)
-                .putBoolean("slide_random", randomMode)
-                .putString("slide_effects_ordered", selectedEffects.joinToString(","))
                 .apply()
-
-            Toast.makeText(this, "Configuración guardada", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Intervalo guardado: $selectedInterval s", Toast.LENGTH_SHORT).show()
         }
 
         builder.setNegativeButton("Cancelar", null)
         builder.show()
     }
-
-
 
 }

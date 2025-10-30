@@ -288,12 +288,12 @@ class ViewerActivity : AppCompatActivity() {
                 val hasMoreImages = mediaFiles.drop(currentIndex + 1).any { !isVideo(it) }
 
                 if (hasMoreImages) {
-                    // Cargar preferencias guardadas
-                    val (intervalSec, randomMode, savedEffects) = loadSlideShowPreferences()
+                    // Cargar solo el intervalo guardado
+                    val intervalSec = loadSlideShowPreferences()
                     val intervalMs = intervalSec * 1000L
 
-                    // Iniciar slideshow con efectos guardados y modo aleatorio si corresponde
-                    startSlideShowSafe(intervalMs, savedEffects, randomMode)
+                    // Iniciar slideshow con intervalo predeterminado
+                    startSlideShowSafe(intervalMs)
                 } else {
                     // Última imagen: mostrar solo, sin slideshow
                     binding.txtFileName.text = "Última imagen"
@@ -310,21 +310,10 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
     }
-    private fun loadSlideShowPreferences(): Triple<Int, Boolean, List<ViewerActivity.SlideEffect>> {
-        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE) // mismo nombre
-        val interval = prefs.getInt("slide_interval", 3).coerceIn(2, 30)
-        val randomMode = prefs.getBoolean("slide_random", true)
-
-        val savedEffectsString = prefs.getString("slide_effects_ordered", "TRANSLATE") ?: "TRANSLATE"
-        val effects = savedEffectsString
-            .split(",")
-            .mapNotNull { runCatching { ViewerActivity.SlideEffect.valueOf(it) }.getOrNull() }
-            .ifEmpty { listOf(ViewerActivity.SlideEffect.TRANSLATE) }
-
-        // Log para depuración
-        Log.d("ViewerActivity", "Cargando slideshow prefs: interval=$interval, random=$randomMode, effects=${effects.joinToString()}")
-
-        return Triple(interval, randomMode, effects)
+    private fun loadSlideShowPreferences(): Int {
+        val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
+        // Cargar intervalo en segundos, por defecto 3
+        return prefs.getInt("slide_interval", 3).coerceIn(1, 30)
     }
 
 
@@ -341,19 +330,20 @@ class ViewerActivity : AppCompatActivity() {
         slideRunning.set(false)
     }
 
-    private fun startSlideShowSafe(intervalMs: Long, effects: List<SlideEffect>, random: Boolean) {
+    private fun startSlideShowSafe(intervalMs: Long) {
         if (slideRunning.get()) return
         slideRunning.set(true)
-        effectIndex = 0
+
         if (!isAudioPlayingForSlideShow) {
             playRandomAudioContinuously()
             isAudioPlayingForSlideShow = true
         }
+
         slideRunnable = object : Runnable {
             override fun run() {
                 val advanced = advanceToNextImage()
                 if (!advanced) {
-                    // fin de presentación
+                    // Fin de la presentación
                     slideRunning.set(false)
                     binding.txtFileName.text = "Fin de la presentación"
 
@@ -374,28 +364,18 @@ class ViewerActivity : AppCompatActivity() {
                     .thumbnail(0.15f)
                     .into(photoView!!)
 
-                updateBlurBackgroundOptimized(currentFile)
 
                 photoView?.alpha = 0f
                 photoView?.animate()?.alpha(1f)?.setDuration(500)?.start()
 
-                // Seleccionar efecto
-                val effect = if (random) effects.random()
-                else {
-                    val e = effects[effectIndex % effects.size]
-                    effectIndex++
-                    e
-                }
-
-                // Aplicar efecto optimizado, duración proporcional al intervalo
-                applyEffectOptimized(photoView!!, effect, intervalMs * 0.7f.toLong())
+                // Solo efecto principal: HORIZONTAL (carrusel izquierda-derecha)
+                applyEffectOptimized(photoView!!, SlideEffect.HORIZONTAL, intervalMs * 0.7f.toLong())
 
                 if (!isFinishing && slideRunning.get()) handler.postDelayed(this, intervalMs)
             }
         }
 
-        slideRunning.set(true)
-        slideRunnable?.let { handler.postDelayed(it, intervalMs) }
+        handler.postDelayed(slideRunnable!!, intervalMs)
     }
 
 
@@ -446,8 +426,8 @@ class ViewerActivity : AppCompatActivity() {
             }
         } else {
             if (!slideRunning.get()) {
-                // iniciar slideshow con configuración por defecto segura
-                startSlideShowSafe(3000L, listOf(SlideEffect.TRANSLATE, SlideEffect.FADE), true)
+                // iniciar slideshow con intervalo por defecto, efecto HORIZONTAL
+                startSlideShowSafe(3000L) // ya no necesita lista de efectos ni modo aleatorio
                 Toast.makeText(this, "Iniciando presentación", Toast.LENGTH_SHORT).show()
                 updatePlayPauseUI(true)
             } else {
@@ -474,49 +454,6 @@ class ViewerActivity : AppCompatActivity() {
         return Math.min(1080, Math.max(720, (screenShort * 0.8).toInt()))
     }
 
-    private fun updateBlurBackgroundOptimized(file: File) {
-        // Para ahorrar CPU/RAM: cargamos una versión muy reducida para el blur
-        try {
-            val blurSize = 200 // pequeño -> bajo consumo
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Para Android 12+ usamos RenderEffect pero con bitmap downscaled
-                Glide.with(this)
-                    .asBitmap()
-                    .load(file)
-                    .override(blurSize, blurSize)
-                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
-                    .into(object : BitmapImageViewTarget(binding.blurBackground) {
-                        override fun setResource(resource: Bitmap?) {
-                            super.setResource(resource)
-                            resource?.let {
-                                try {
-                                    val drawable = BitmapDrawable(resources, it)
-                                    binding.blurBackground.setImageDrawable(drawable)
-                                    val blurEffect = RenderEffect.createBlurEffect(18f, 18f, Shader.TileMode.CLAMP)
-                                    binding.blurBackground.setRenderEffect(blurEffect)
-                                } catch (e: Exception) {
-                                    // fallback a Glide transform si falla
-                                    Glide.with(this@ViewerActivity)
-                                        .load(file)
-                                        .transform(BlurTransformation(10, 2))
-                                        .into(binding.blurBackground)
-                                }
-                            }
-                        }
-                    })
-            } else {
-                // Para versiones antiguas usar la transformación de Glide pero con parámetros reducidos
-                Glide.with(this)
-                    .load(file)
-                    .override(blurSize, blurSize)
-                    .transform(BlurTransformation(10, 2))
-                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
-                    .into(binding.blurBackground)
-            }
-        } catch (e: Exception) {
-            // no bloquear UI si falla el blur
-        }
-    }
 
     private fun releasePlayer() {
         try {
@@ -570,6 +507,7 @@ class ViewerActivity : AppCompatActivity() {
             else -> return super.onKeyDown(keyCode, event)
         }
     }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun previousOrPrevious() {
         cancelSlideRunnable()
         releasePlayer()
@@ -641,7 +579,8 @@ class ViewerActivity : AppCompatActivity() {
         super.onDestroy()
         try {
             unregisterReceiver(mediaUnmountReceiver)
-        } catch (e: Exception) { /* ignore */ }
+        } catch (e: Exception) { /* ignore */
+        }
         releasePlayer()
         cancelSlideRunnable()
     }
@@ -657,87 +596,39 @@ class ViewerActivity : AppCompatActivity() {
 
     // --- Animaciones y efectos ligeros ---
     enum class SlideEffect {
-        TRANSLATE,
-        ZOOM,
-        FADE,
-        SCALE,
-        BOUNCE
+        HORIZONTAL
     }
 
     // Animaciones optimizadas para TV: delta pequeño, duración proporcional
+    // Efecto único: movimiento horizontal suave
     private fun applyEffectOptimized(photoView: PhotoView, effect: ViewerActivity.SlideEffect, duration: Long) {
-        val interpolator = DecelerateInterpolator()
-
         try {
-            when (effect) {
-                ViewerActivity.SlideEffect.TRANSLATE -> {
-                    val dx = 15f
-                    val dy = 15f
-                    photoView.translationX = 0f
-                    photoView.translationY = 0f
-                    photoView.animate()
-                        .translationX(dx)
-                        .translationY(dy)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .withEndAction {
-                            photoView.translationX = 0f
-                            photoView.translationY = 0f
-                        }.start()
-                }
+            val interpolator = DecelerateInterpolator()
 
-                ViewerActivity.SlideEffect.ZOOM -> {
-                    val scale = 1.05f
-                    photoView.scaleX = 1f
-                    photoView.scaleY = 1f
-                    photoView.animate()
-                        .scaleX(scale)
-                        .scaleY(scale)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .withEndAction {
-                            photoView.scaleX = 1f
-                            photoView.scaleY = 1f
-                        }.start()
-                }
+            // Movimiento horizontal leve
+            val direction = if ((0..1).random() == 0) 1 else -1 // alterna dirección
+            val dx = 25f * direction
 
-                ViewerActivity.SlideEffect.FADE -> {
-                    photoView.alpha = 0.85f
+            photoView.translationX = 0f
+            photoView.animate()
+                .translationX(dx)
+                .setDuration(duration)
+                .setInterpolator(interpolator)
+                .withEndAction {
+                    // regresa lentamente al centro
                     photoView.animate()
-                        .alpha(1f)
+                        .translationX(0f)
                         .setDuration(duration)
                         .setInterpolator(interpolator)
                         .start()
                 }
+                .start()
 
-                ViewerActivity.SlideEffect.SCALE -> {
-                    val scale = 0.96f
-                    photoView.scaleX = 1f
-                    photoView.scaleY = 1f
-                    photoView.animate()
-                        .scaleX(scale)
-                        .scaleY(scale)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .withEndAction {
-                            photoView.scaleX = 1f
-                            photoView.scaleY = 1f
-                        }.start()
-                }
-
-                ViewerActivity.SlideEffect.BOUNCE -> {
-                    photoView.translationY = -8f
-                    photoView.animate()
-                        .translationY(0f)
-                        .setDuration(duration)
-                        .setInterpolator(BounceInterpolator())
-                        .start()
-                }
-            }
         } catch (e: Exception) {
-            // Protege TV de bajo rendimiento
+            // proteger TVs de bajo rendimiento
         }
     }
+
 
     private var audioUris: List<Uri> = emptyList()
 

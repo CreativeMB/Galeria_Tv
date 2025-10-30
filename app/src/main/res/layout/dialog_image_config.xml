@@ -8,7 +8,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Intervalo de tiempo (s)"
+        android:text="Intervalo de tiempo de imagenes (s)"
         android:textSize="18sp"
         android:paddingBottom="8dp" />
 
@@ -16,51 +16,5 @@
         android:id="@+id/spinner_interval"
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
-
-    <Switch
-        android:id="@+id/switch_random"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Modo aleatorio"
-        android:checked="true"
-        android:layout_marginTop="12dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Selecciona efecto"
-        android:textSize="18sp"
-        android:paddingTop="12dp"
-        android:paddingBottom="8dp" />
-    <!-- 🔹 Botones en una sola fila -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:layout_marginTop="12dp">
-
-        <Button
-            android:id="@+id/btn_select_all"
-            android:text="Seleccionar todo"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="16dp" />
-
-        <Button
-            android:id="@+id/btn_clear_all"
-            android:text="Limpiar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
-    </LinearLayout>
-
-    <ListView
-        android:id="@+id/list_effects"
-        android:layout_width="match_parent"
-        android:layout_height="200dp"
-        android:divider="@android:color/darker_gray"
-        android:dividerHeight="1dp"
-        android:choiceMode="multipleChoice" />
-
 
 </LinearLayout>
