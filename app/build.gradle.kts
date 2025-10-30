@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("org.jetbrains.kotlin.kapt")
 }
 
 android {
@@ -64,8 +65,10 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    implementation(libs.glide.core)
+    kapt(libs.glide.compiler)
+
     implementation("androidx.recyclerview:recyclerview:1.3.0")
-    implementation("com.github.bumptech.glide:glide:4.15.1")
     implementation("androidx.media3:media3-exoplayer:1.0.0")
     implementation("androidx.media3:media3-ui:1.0.0")
     implementation("androidx.core:core-ktx:1.12.0")
@@ -73,6 +76,5 @@ dependencies {
     implementation("com.github.chrisbanes:PhotoView:2.3.0")
     implementation("com.google.android.material:material:1.11.0")
     implementation("jp.wasabeef:glide-transformations:4.3.0")
-
 
 }

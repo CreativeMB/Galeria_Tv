@@ -234,7 +234,7 @@ class ViewerActivity : AppCompatActivity() {
                     .asBitmap()
                     .load(file)
                     .override(picMaxDim, picMaxDim)
-                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    .diskCacheStrategy(DiskCacheStrategy.NONE)
                     // --- CAMBIO: No guardar en caché de memoria RAM ---
                     .skipMemoryCache(true)
                     .thumbnail(0.15f)
@@ -292,45 +292,63 @@ class ViewerActivity : AppCompatActivity() {
                     .asBitmap()
                     .load(nextFile)
                     .override(calculateTargetImageSize(), calculateTargetImageSize())
-                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
-                    // --- CAMBIO: No guardar en caché de memoria RAM ---
+                    .diskCacheStrategy(DiskCacheStrategy.NONE)
                     .skipMemoryCache(true)
                     .thumbnail(0.15f)
                     .into(nextView)
 
-                val containerWidth = binding.photoViewContainer.width.toFloat()
+                // --- INICIO DE LA NUEVA LÓGICA DE TRANSICIÓN LENTA Y MEZCLADA ---
 
-                nextView.translationX = containerWidth
+                // 1. Duración de la animación. Aumentamos a 2.5 segundos para un efecto lento.
+                //    ¡Puedes ajustar este valor a tu gusto!
+                val transitionDuration = 2500L // 2.5 segundos
+
+                // 2. La vista activa (la de abajo) se mantiene visible y opaca.
+                activeView.alpha = 1f
+
+                // 3. Preparamos la vista nueva (la que aparecerá encima).
+                //    La hacemos visible, pero completamente transparente al inicio.
+                nextView.alpha = 0f
                 nextView.visibility = View.VISIBLE
 
-                activeView.animate()
-                    .translationX(-containerWidth)
-                    .setDuration(800)
-                    .setInterpolator(DecelerateInterpolator())
-                    .start()
+                // 4. Aseguramos que la nueva vista esté al frente para que aparezca sobre la antigua.
+                nextView.bringToFront()
 
+                // 5. Animamos SOLAMENTE la nueva vista para que aparezca lentamente.
                 nextView.animate()
-                    .translationX(0f)
-                    .setDuration(800)
-                    .setInterpolator(DecelerateInterpolator())
+                    .alpha(1f) // Se vuelve completamente opaca
+                    .setDuration(transitionDuration)
+                    // Usamos un interpolador que suaviza el inicio y el final de la animación.
+                    .setInterpolator(android.view.animation.AccelerateDecelerateInterpolator())
                     .withEndAction {
+                        // ESTO SE EJECUTA CUANDO LA ANIMACIÓN TERMINA
+                        // Ahora que la nueva imagen cubre por completo a la antigua...
+
+                        // a. Ocultamos la vista antigua, que ya no se ve.
                         activeView.visibility = View.GONE
-                        // --- CAMBIO CLAVE: Limpiar la vista que ya no se ve ---
+
+                        // b. Limpiamos sus recursos de memoria.
                         if (isActivityAlive()) {
                             Glide.with(this@ViewerActivity).clear(activeView)
                         }
+
+                        // c. Cambiamos el puntero a la vista activa.
                         isPhotoView1Active = !isPhotoView1Active
                     }
                     .start()
 
+                // --- FIN DE LA NUEVA LÓGICA ---
+
                 if (!isFinishing && slideRunning.get()) {
-                    handler.postDelayed(this, intervalMs + 800)
+                    // El siguiente cambio se programará después del intervalo + la duración de la transición.
+                    handler.postDelayed(this, intervalMs + transitionDuration)
                 }
             }
         }
 
         handler.postDelayed(slideRunnable!!, intervalMs)
     }
+
 
     // --- NUEVA FUNCIÓN: Para evitar crashes al limpiar la vista si la activity ya no existe ---
     private fun isActivityAlive(): Boolean {
@@ -370,16 +388,22 @@ class ViewerActivity : AppCompatActivity() {
         val file = mediaFiles.getOrNull(currentIndex) ?: return
 
         if (isVideo(file)) {
+            // Esta parte para los videos está perfecta, no se toca.
             exoPlayer?.let { player ->
                 if (player.isPlaying) player.pause() else player.play()
                 updatePlayPauseUI(player.isPlaying)
             }
         } else {
+            // --- CAMBIO CLAVE PARA LAS IMÁGENES ---
             if (slideRunning.get()) {
+                // Si el carrusel está corriendo, simplemente lo detenemos.
+                // NO TOCAMOS EL AUDIO.
                 cancelSlideRunnable()
-                audioPlayer?.pause()
                 updatePlayPauseUI(false)
             } else {
+                // Si el carrusel está detenido, lo iniciamos.
+                // La función startSlideShowSafe ya es inteligente y solo
+                // iniciará el audio si no está sonando ya.
                 val intervalSec = loadSlideShowPreferences()
                 startSlideShowSafe(intervalSec * 1000L)
                 updatePlayPauseUI(true)
