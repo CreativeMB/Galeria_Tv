@@ -6,6 +6,6 @@ data class FileItem(
     val file: File,
     val name: String,
     val isFolder: Boolean,
-    val thumbnailFile: File? = null,
-    val isAudioFolderItem: Boolean = false
+    val thumbnailFile: File? = null, // <-- NUEVO CAMPO
+    val isAudioFolderItem: Boolean = false // Si sigues usando esto
 )

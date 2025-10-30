@@ -61,19 +61,14 @@ class FolderAdapter(
     override fun onBindViewHolder(holder: FolderViewHolder, position: Int) {
         val item = items[position]
 
+        // --- Configuración básica de la vista (sin cambios) ---
         holder.binding.fileName.text = item.name
         holder.binding.fileName.isSelected = true
         holder.binding.root.layoutParams.width = itemWidth
         holder.binding.root.layoutParams.height = itemWidth + dpToPx(40)
         holder.binding.root.requestLayout()
 
-        val imageToLoad = if (item.isFolder) {
-            item.file.listFiles { f -> f.name.lowercase().matches(Regex(".*\\.(jpg|jpeg|png)$")) }?.firstOrNull()
-        } else item.file
-
-        val extension = item.file.extension.lowercase()
-        val isVideo = extension in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")
-
+        // --- Lógica de UI: Fondos (sin cambios) ---
         fun updateBackground() {
             holder.binding.root.background = when {
                 item.isFolder && visitedFolders.contains(item.file.absolutePath) ->
@@ -84,6 +79,7 @@ class FolderAdapter(
         }
         updateBackground()
 
+        // --- Lógica de UI: Animación de Foco (sin cambios) ---
         holder.itemView.setOnFocusChangeListener { view, hasFocus ->
             if (hasFocus) {
                 view.animate().scaleX(1.12f).scaleY(1.12f).setDuration(150).start()
@@ -96,31 +92,55 @@ class FolderAdapter(
             }
         }
 
-        val targetSize = itemWidth / 4
+        // --- LÓGICA DE CARGA DE IMAGEN: PEREZOSA Y MINIMALISTA ---
+
+        // 1. Limpiamos el ImageView para evitar ver la imagen anterior en vistas recicladas.
+        holder.binding.fileIcon.setImageDrawable(null)
+
+        // 2. Buscamos la miniatura "justo a tiempo". Si no se encuentra, 'imageToLoad' será null.
+        val imageToLoad: Any? = if (item.isFolder) {
+            item.file.listFiles { file ->
+                file.isFile && (file.name.endsWith(".jpg", true) || file.name.endsWith(".png", true))
+            }?.firstOrNull()
+        } else {
+            item.file
+        }
+
+        // 3. Carga con Glide optimizado. Si 'imageToLoad' es null, el ImageView quedará en blanco.
+        val targetSize = itemWidth
         Glide.with(holder.binding.fileIcon.context)
-            .asBitmap()
-            .load(imageToLoad ?: null)
+            .load(imageToLoad) // Carga el archivo, o null si no hay miniatura
             .override(targetSize, targetSize)
-            .diskCacheStrategy(DiskCacheStrategy.NONE)
-            .skipMemoryCache(true)
-            .dontAnimate()
+            .fitCenter() // Muestra la imagen completa sin recortar
+            .diskCacheStrategy(DiskCacheStrategy.NONE) // No usa almacenamiento
+            .skipMemoryCache(false) // Sí usa RAM para scroll fluido
+            .dontAnimate() // Evita animaciones de fade-in de Glide
             .into(holder.binding.fileIcon)
+
+
+        // --- Overlays y Listeners (sin cambios) ---
+        val extension = item.file.extension.lowercase()
+        val isVideo = extension in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")
 
         holder.binding.fileIcon.foreground =
             if (item.isFolder) context.getDrawable(R.drawable.overlay_folder_border) else null
-
         holder.binding.playOverlay.visibility = if (isVideo) View.VISIBLE else View.GONE
 
-        // ✅ Click normal: solo navega o ejecuta acción
+        // Click normal
         holder.binding.root.setOnClickListener {
+            // PRIMERO, revisa si es el ítem especial
             if (item.isAudioFolderItem) {
+                // Si lo es, llama a la función especial para la carpeta de audio
+                // que pasaste en el constructor del adapter.
                 onAudioFolderClick?.invoke()
             } else {
+                // SI NO lo es, entonces es un archivo o carpeta normal.
+                // Usa el callback normal.
                 onItemClick(item, item.isFolder)
             }
         }
 
-        // 🔥 Click largo: eliminar archivo o carpeta
+        // Click largo para eliminar
         holder.binding.root.setOnLongClickListener {
             val pos = holder.bindingAdapterPosition
             if (pos == RecyclerView.NO_POSITION) return@setOnLongClickListener true
@@ -143,6 +163,7 @@ class FolderAdapter(
             true
         }
 
+        // Lógica para enfocar el primer ítem (sin cambios)
         if (focusFirstItemOnNextLoad && position == 0) {
             holder.itemView.post {
                 holder.itemView.requestFocus()

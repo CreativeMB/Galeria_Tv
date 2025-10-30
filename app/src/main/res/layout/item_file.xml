@@ -24,9 +24,9 @@ android:clipToPadding="false">
     android:id="@+id/fileIcon"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:scaleType="centerCrop"
+    android:scaleType="fitCenter"
     android:contentDescription="icono"
-    android:layout_margin="4dp" /> <!-- margen interno para espacio de foco -->
+    android:layout_margin="4dp" />
 
 <!-- Ícono de play centrado -->
 <ImageView

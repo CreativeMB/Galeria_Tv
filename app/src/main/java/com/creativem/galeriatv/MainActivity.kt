@@ -117,13 +117,16 @@ class MainActivity : AppCompatActivity() {
 
     /** ------------------ ADAPTER Y RECYCLER ------------------ **/
 
+    // EN TU ARCHIVO MainActivity.kt
+
     private fun initAdapter() {
         folderAdapter = FolderAdapter(
             this,
+            // PRIMER CALLBACK: La acción para clics normales.
+            // Nota cómo el 'when' es más simple ahora, ya no necesita el caso 'isAudioFolderItem'.
             onItemClick = { fileItem, isFolder ->
                 when {
                     // Si está seleccionando carpeta principal o de audios
-                    // solo navega (NO guarda todavía)
                     selectingDefaultFolder || selectingAudioFolder -> {
                         if (isFolder) {
                             loadFolder(fileItem.file)
@@ -132,17 +135,17 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                    // Si es el ítem especial para carpeta de audios
-                    fileItem.isAudioFolderItem -> {
-                        openAudioFolderNavigator()
-                    }
-
-                    // Navegación normal
+                    // Navegación normal (el caso 'isAudioFolderItem' ya no es necesario aquí)
                     else -> {
                         if (isFolder) loadFolder(fileItem.file)
                         else openFile(fileItem.file)
                     }
                 }
+            },
+            // SEGUNDO CALLBACK: La acción para el clic en el botón de audio.
+            // Simplemente le decimos que ejecute tu función 'openAudioFolderNavigator'.
+            onAudioFolderClick = {
+                openAudioFolderNavigator()
             }
         )
         binding.recyclerView.adapter = folderAdapter
@@ -294,11 +297,11 @@ class MainActivity : AppCompatActivity() {
     private fun showColumnSelectionDialog() {
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
         val currentColumns = prefs.getInt("grid_columns", 4)
-        val options = (1..8).map { if (it == currentColumns) "$it ítems por fila ✅" else "$it ítems por fila" }.toTypedArray()
+        val options = (2..8).map { if (it == currentColumns) "$it ítems por fila ✅" else "$it ítems por fila" }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Selecciona cantidad de ítems por fila")
             .setItems(options) { _, index ->
-                val columnas = index + 1
+                val columnas = index + 2
                 prefs.edit().putInt("grid_columns", columnas).apply()
                 updateColumnCount(columnas)
             }
@@ -343,38 +346,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // En tu MainActivity.kt
+
+    // EN TU ARCHIVO MainActivity.kt
+
     fun loadFolder(folder: File, saveAsCurrent: Boolean = true, addToStack: Boolean = true) {
         if (saveAsCurrent) currentFolderFile = folder
         if (addToStack && (folderStack.isEmpty() || folderStack.last != folder)) folderStack.add(folder)
 
         folderAdapter.markFolderAsVisited(folder)
 
+        // Inicia la corrutina en el hilo de I/O para trabajo pesado
         lifecycleScope.launch(Dispatchers.IO) {
-            val children = UriHelper.listFiles(folder).toMutableList()
 
-            // ✅ Ya no agregamos el item falso de "Seleccionar carpeta de audios"
+            // 1. Listamos los archivos. Esto es rápido.
+            // Ya no hacemos el pre-cálculo de miniaturas aquí.
+            val children = UriHelper.listFiles(folder)
 
+            // 2. Ordenamos la lista. Esto también es rápido.
             val sorted = children.sortedWith(
                 compareBy<FileItem> {
                     when {
                         it.isFolder -> 0
-                        it.file.extension.lowercase() in listOf("jpg","jpeg","png","gif") -> 1
-                        it.file.extension.lowercase() in listOf("mp4","mkv","avi","mov","wmv","flv") -> 2
-                        else -> 3
+                        it.file.extension.lowercase() in listOf("jpg", "jpeg", "png", "gif") -> 1
+                        it.file.extension.lowercase() in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv") -> 2
+                        else -> 3 // MP3 y otros archivos
                     }
-                }.thenByDescending { it.file.lastModified() }
+                }.thenByDescending { it.file.lastModified() } // El segundo criterio de ordenación
             )
 
+            // 3. Pasamos la lista simple y rápida al hilo principal para actualizar la UI
             withContext(Dispatchers.Main) {
                 folderAdapter.submitList(sorted)
+                // Tu lógica para enfocar el primer item está perfecta
                 if (binding.recyclerView.childCount > 0) {
                     binding.recyclerView.post { binding.recyclerView.getChildAt(0)?.requestFocus() }
                 }
             }
         }
     }
-
-
     private fun getStorageRoots(): List<FileItem> {
         val roots = mutableListOf<FileItem>()
         val primary = Environment.getExternalStorageDirectory()
