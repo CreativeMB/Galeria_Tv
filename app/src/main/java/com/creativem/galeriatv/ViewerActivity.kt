@@ -1,73 +1,54 @@
 package com.creativem.galeriatv
 
-import android.R.attr.duration
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Bitmap
-import android.graphics.RenderEffect
-import android.graphics.Shader
-import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.MediaStore
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
-import android.view.animation.AccelerateDecelerateInterpolator
-import android.view.animation.BounceInterpolator
 import android.view.animation.DecelerateInterpolator
-import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.documentfile.provider.DocumentFile
 import androidx.media3.common.MediaItem
-import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.request.target.BitmapImageViewTarget
 import com.creativem.galeriatv.databinding.ActivityViewerBinding
 import com.github.chrisbanes.photoview.PhotoView
-import jp.wasabeef.glide.transformations.BlurTransformation
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.lang.Exception
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * ViewerActivity optimizada para TV de bajos recursos.
  *
  * Principales cambios:
- *  - Reutiliza una única PhotoView y PlayerView para evitar crear muchas vistas.
+ *  - Reutiliza dos PhotoView para crear un efecto de carrusel continuo y sin espacios.
  *  - Carga imágenes en baja resolución para usar menos memoria.
- *  - Aplica blur de fondo con downscale para no consumir demasiada RAM/CPU.
  *  - Detecta desconexión de unidad y maneja errores de IO.
  *  - Evita múltiples postDelayed encolados.
  */
 class ViewerActivity : AppCompatActivity() {
 
-    private var audioFiles: List<File> = emptyList()
     private var audioPlayer: ExoPlayer? = null
-    private var currentAudioIndex = 0
-    private var shuffleAudio = true
     private var isAudioPlayingForSlideShow = false
-
-    private var effectIndex = 0
 
     private lateinit var binding: ActivityViewerBinding
 
     // Player y vistas reutilizables
     private var exoPlayer: ExoPlayer? = null
     private var playerView: PlayerView? = null
-    private var photoView: PhotoView? = null
+
+    // --- Dos PhotoView para el carrusel continuo ---
+    private var photoView1: PhotoView? = null
+    private var photoView2: PhotoView? = null
+    private var isPhotoView1Active = true // Controla cuál PhotoView está visible
 
     private var mediaFiles: List<File> = emptyList()
     private var currentIndex = 0
@@ -92,10 +73,8 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    // Receiver para detectar que la unidad se desmontó / extraída
     private val mediaUnmountReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            // Si la tarjeta/usb se desmonta, avisar y cerrar activity limpiamente
             Toast.makeText(this@ViewerActivity, "Unidad de almacenamiento desconectada", Toast.LENGTH_SHORT).show()
             finishSafely()
         }
@@ -114,7 +93,8 @@ class ViewerActivity : AppCompatActivity() {
             context.startActivity(intent)
         }
     }
-    @androidx.annotation.OptIn(UnstableApi::class)
+
+    @UnstableApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityViewerBinding.inflate(layoutInflater)
@@ -122,7 +102,6 @@ class ViewerActivity : AppCompatActivity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        // Registrar receiver para eventos de almacenamiento removido
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_MEDIA_UNMOUNTED)
             addAction(Intent.ACTION_MEDIA_EJECT)
@@ -131,10 +110,8 @@ class ViewerActivity : AppCompatActivity() {
         }
         registerReceiver(mediaUnmountReceiver, filter)
 
-        // Inicializar vistas reutilizables
         initReusableViews()
 
-        // Tomar parámetros
         val fileUriString = intent.getStringExtra(EXTRA_FILE_URI)
         val folderPath = intent.getStringExtra(EXTRA_FOLDER_PATH)
         if (fileUriString == null || folderPath == null) {
@@ -153,7 +130,7 @@ class ViewerActivity : AppCompatActivity() {
         try {
             mediaFiles = folder.listFiles { f ->
                 val ext = f.extension.lowercase()
-                ext in listOf("mp4","mkv","avi","mov","wmv","flv","jpg","jpeg","png","gif")
+                ext in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv", "jpg", "jpeg", "png", "gif")
             }?.sortedByDescending { it.lastModified() }?.toList() ?: emptyList()
         } catch (e: SecurityException) {
             Toast.makeText(this, "No hay permiso para acceder a la carpeta", Toast.LENGTH_SHORT).show()
@@ -165,35 +142,36 @@ class ViewerActivity : AppCompatActivity() {
             return
         }
 
-        // Ubicar índice inicial de archivo seleccionado (fallback 0)
-        val selectedFile = try {
-            File(Uri.parse(fileUriString).path!!)
-        } catch (e: Exception) {
-            null
-        }
+        val selectedFile = try { File(Uri.parse(fileUriString).path!!) } catch (e: Exception) { null }
         currentIndex = selectedFile?.let { mediaFiles.indexOfFirst { it.absolutePath == selectedFile.absolutePath } } ?: -1
         if (currentIndex == -1) currentIndex = 0
 
         binding.btnPlayPause.setOnClickListener { togglePlayback() }
 
-        // focus y accesibilidad básica
         setupFocusHighlight()
         loadAudioFolder()
 
-        // arrancar mostrando el archivo actual (no iniciar slideshow hasta que se muestre)
         showMedia(currentIndex)
     }
 
     private fun initReusableViews() {
-        // PhotoView único reutilizable
-        photoView = PhotoView(this).also {
-            it.maximumScale = 3f
-            it.minimumScale = 1f
-            it.isZoomable = true
-            // no agregamos todavía; se agrega en photoContainer cuando se muestre
+        val createPhotoView = {
+            PhotoView(this).apply {
+                maximumScale = 3f
+                minimumScale = 1f
+                isZoomable = true
+                layoutParams = android.view.ViewGroup.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            }
         }
+        photoView1 = createPhotoView()
+        photoView2 = createPhotoView()
+        binding.photoViewContainer.addView(photoView1)
+        binding.photoViewContainer.addView(photoView2)
 
-        // PlayerView único reutilizable
+
         playerView = PlayerView(this).apply {
             useController = false
             layoutParams = android.view.ViewGroup.LayoutParams(
@@ -202,7 +180,6 @@ class ViewerActivity : AppCompatActivity() {
             )
             visibility = View.GONE
         }
-        // No lo añadimos ahora si no es necesario; lo añadimos al container cuando toca reproducir video
     }
 
     private fun setupFocusHighlight() {
@@ -212,31 +189,24 @@ class ViewerActivity : AppCompatActivity() {
     }
 
     @UnstableApi
-    @OptIn(UnstableApi::class)
     private fun showMedia(index: Int) {
-        if (mediaFiles.isEmpty()) return
-        if (index !in mediaFiles.indices) return
+        if (mediaFiles.isEmpty() || index !in mediaFiles.indices) return
 
         currentIndex = index
         val file = mediaFiles[index]
 
-        // Limpiar container solo si se va a mostrar algo
         binding.photoViewContainer.removeAllViews()
-
-        // Detener player y slideshow
         releasePlayer()
         cancelSlideRunnable()
 
         binding.videoCenterIcon.visibility = View.GONE
         if (isVideo(file)) {
-            // Verificar compatibilidad
             if (!isSupportedVideo(file)) {
                 Toast.makeText(this, "Formato de video no compatible: ${file.extension}", Toast.LENGTH_LONG).show()
-                binding.txtFileName.text = "Formato no compatible Usa Vlc "
+                binding.txtFileName.text = "Formato no compatible. Usa VLC."
                 return
             }
 
-            // --- VIDEO ---
             try {
                 binding.photoViewContainer.addView(playerView)
                 playerView?.visibility = View.VISIBLE
@@ -253,7 +223,6 @@ class ViewerActivity : AppCompatActivity() {
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == ExoPlayer.STATE_ENDED) {
                             if (currentIndex >= mediaFiles.lastIndex) {
-                                // Último video: detener player y slideshow
                                 releasePlayer()
                                 binding.txtFileName.text = "Último video"
                             } else {
@@ -266,14 +235,18 @@ class ViewerActivity : AppCompatActivity() {
                 Toast.makeText(this, "Error al reproducir video", Toast.LENGTH_SHORT).show()
                 if (currentIndex < mediaFiles.lastIndex) nextMediaVideo() else releasePlayer()
             }
-
         } else {
-            // --- IMAGEN ---
             try {
-                binding.photoViewContainer.addView(photoView)
-                photoView?.visibility = View.VISIBLE
+                binding.photoViewContainer.addView(photoView1)
+                binding.photoViewContainer.addView(photoView2)
 
+                val activeView = if (isPhotoView1Active) photoView1!! else photoView2!!
+                val inactiveView = if (isPhotoView1Active) photoView2!! else photoView1!!
 
+                activeView.translationX = 0f
+                activeView.alpha = 1f
+                activeView.visibility = View.VISIBLE
+                inactiveView.visibility = View.GONE
 
                 val picMaxDim = calculateTargetImageSize()
                 Glide.with(this)
@@ -282,46 +255,34 @@ class ViewerActivity : AppCompatActivity() {
                     .override(picMaxDim, picMaxDim)
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                     .thumbnail(0.15f)
-                    .into(photoView!!)
+                    .into(activeView)
 
-// Verificar si hay más imágenes para slideshow
                 val hasMoreImages = mediaFiles.drop(currentIndex + 1).any { !isVideo(it) }
 
                 if (hasMoreImages) {
-                    // Cargar solo el intervalo guardado
                     val intervalSec = loadSlideShowPreferences()
-                    val intervalMs = intervalSec * 1000L
-
-                    // Iniciar slideshow con intervalo predeterminado
-                    startSlideShowSafe(intervalMs)
+                    startSlideShowSafe(intervalSec * 1000L)
                 } else {
-                    // Última imagen: mostrar solo, sin slideshow
                     binding.txtFileName.text = "Última imagen"
                     cancelSlideRunnable()
                 }
 
-
-
-
                 updatePlayPauseUI(true)
-
             } catch (e: Exception) {
                 Toast.makeText(this, "Error al mostrar imagen", Toast.LENGTH_SHORT).show()
             }
         }
     }
+
     private fun loadSlideShowPreferences(): Int {
         val prefs = getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
-        // Cargar intervalo en segundos, por defecto 3
         return prefs.getInt("slide_interval", 3).coerceIn(1, 30)
     }
 
-
     private fun isSupportedVideo(file: File): Boolean {
-        return file.extension.lowercase() in listOf("mp4","mkv","mov") // formatos seguros
+        return file.extension.lowercase() in listOf("mp4", "mkv", "mov")
     }
 
-    // Evitar multiples runnables
     private fun cancelSlideRunnable() {
         slideRunnable?.let {
             handler.removeCallbacks(it)
@@ -341,65 +302,76 @@ class ViewerActivity : AppCompatActivity() {
 
         slideRunnable = object : Runnable {
             override fun run() {
-                val advanced = advanceToNextImage()
-                if (!advanced) {
-                    // Fin de la presentación
+                if (!advanceToNextImage()) {
                     slideRunning.set(false)
                     binding.txtFileName.text = "Fin de la presentación"
-
-                    // Detener audio al final
                     audioPlayer?.stop()
                     audioPlayer?.release()
                     audioPlayer = null
                     return
                 }
 
-                val currentFile = mediaFiles[currentIndex]
+                val activeView = if (isPhotoView1Active) photoView1!! else photoView2!!
+                val nextView = if (isPhotoView1Active) photoView2!! else photoView1!!
 
+                val nextFile = mediaFiles[currentIndex]
                 Glide.with(this@ViewerActivity)
                     .asBitmap()
-                    .load(currentFile)
+                    .load(nextFile)
+                    // --- CORRECCIÓN AQUÍ ---
                     .override(calculateTargetImageSize(), calculateTargetImageSize())
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
                     .thumbnail(0.15f)
-                    .into(photoView!!)
+                    .into(nextView)
 
+                val containerWidth = binding.photoViewContainer.width.toFloat()
 
-                photoView?.alpha = 0f
-                photoView?.animate()?.alpha(1f)?.setDuration(500)?.start()
+                nextView.translationX = containerWidth
+                nextView.visibility = View.VISIBLE
 
-                // Solo efecto principal: HORIZONTAL (carrusel izquierda-derecha)
-                applyEffectOptimized(photoView!!, SlideEffect.HORIZONTAL, intervalMs * 0.7f.toLong())
+                activeView.animate()
+                    .translationX(-containerWidth)
+                    .setDuration(800)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
 
-                if (!isFinishing && slideRunning.get()) handler.postDelayed(this, intervalMs)
+                nextView.animate()
+                    .translationX(0f)
+                    .setDuration(800)
+                    .setInterpolator(DecelerateInterpolator())
+                    .withEndAction {
+                        activeView.visibility = View.GONE
+                        isPhotoView1Active = !isPhotoView1Active
+                    }
+                    .start()
+
+                if (!isFinishing && slideRunning.get()) {
+                    handler.postDelayed(this, intervalMs + 800)
+                }
             }
         }
 
         handler.postDelayed(slideRunnable!!, intervalMs)
     }
 
-
     private fun advanceToNextImage(): Boolean {
         var next = currentIndex + 1
         while (next < mediaFiles.size) {
-            val f = mediaFiles[next]
-            if (!isVideo(f)) {
+            if (!isVideo(mediaFiles[next])) {
                 currentIndex = next
                 return true
             }
             next++
         }
-        return false // última imagen, no hacer nada
+        return false
     }
 
-
-    @androidx.annotation.OptIn(UnstableApi::class)
+    @UnstableApi
     private fun nextMediaVideo() {
         releasePlayer()
         var nextIndex = currentIndex + 1
         while (nextIndex < mediaFiles.size) {
-            val file = mediaFiles[nextIndex]
-            if (isVideo(file)) {
+            if (isVideo(mediaFiles[nextIndex])) {
                 currentIndex = nextIndex
                 showMedia(currentIndex)
                 return
@@ -417,22 +389,18 @@ class ViewerActivity : AppCompatActivity() {
                 if (player.isPlaying) {
                     player.pause()
                     updatePlayPauseUI(false)
-                    Toast.makeText(this, "Video pausado", Toast.LENGTH_SHORT).show()
                 } else {
                     player.play()
                     updatePlayPauseUI(true)
-                    Toast.makeText(this, "Video reproduciéndose", Toast.LENGTH_SHORT).show()
                 }
             }
         } else {
             if (!slideRunning.get()) {
-                // iniciar slideshow con intervalo por defecto, efecto HORIZONTAL
-                startSlideShowSafe(3000L) // ya no necesita lista de efectos ni modo aleatorio
-                Toast.makeText(this, "Iniciando presentación", Toast.LENGTH_SHORT).show()
+                val intervalSec = loadSlideShowPreferences()
+                startSlideShowSafe(intervalSec * 1000L)
                 updatePlayPauseUI(true)
             } else {
                 cancelSlideRunnable()
-                Toast.makeText(this, "Presentación detenida", Toast.LENGTH_SHORT).show()
                 updatePlayPauseUI(false)
             }
         }
@@ -440,20 +408,18 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun updatePlayPauseUI(isPlaying: Boolean) {
         binding.btnPlayPause.setImageResource(
-            if (isPlaying) android.R.drawable.ic_media_pause
-            else android.R.drawable.ic_media_play
+            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         )
-        binding.videoCenterIcon.visibility = if (isPlaying) View.GONE else View.VISIBLE
+        // Corrección para no mostrar el ícono de play sobre las imágenes
+        val isCurrentlyVideo = isVideo(mediaFiles.getOrNull(currentIndex) ?: return)
+        binding.videoCenterIcon.visibility = if (isCurrentlyVideo && !isPlaying) View.VISIBLE else View.GONE
     }
 
     private fun calculateTargetImageSize(): Int {
-        // Reducir la resolución de las imágenes para TV de bajos recursos:
         val displayMetrics = resources.displayMetrics
         val screenShort = Math.min(displayMetrics.widthPixels, displayMetrics.heightPixels)
-        // limitar a como máximo 1080, pero en TVs de bajos recursos preferir 800
         return Math.min(1080, Math.max(720, (screenShort * 0.8).toInt()))
     }
-
 
     private fun releasePlayer() {
         try {
@@ -468,11 +434,9 @@ class ViewerActivity : AppCompatActivity() {
         }
         audioPlayer?.release()
         audioPlayer = null
-
     }
 
     private fun finishSafely() {
-        // cerrar limpiamente
         releasePlayer()
         cancelSlideRunnable()
         if (!isFinishing) finish()
@@ -480,23 +444,13 @@ class ViewerActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_UP -> {
                 advanceOrNext()
                 hideBottomBarIfVisible()
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_LEFT -> {
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN -> {
                 previousOrPrevious()
-                hideBottomBarIfVisible()
-                return true
-            }
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                advanceOrNext()  // también avanzar con UP si quieres
-                hideBottomBarIfVisible()
-                return true
-            }
-            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                previousOrPrevious() // también retroceder con DOWN si quieres
                 hideBottomBarIfVisible()
                 return true
             }
@@ -507,37 +461,31 @@ class ViewerActivity : AppCompatActivity() {
             else -> return super.onKeyDown(keyCode, event)
         }
     }
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
+    @UnstableApi
     private fun previousOrPrevious() {
         cancelSlideRunnable()
         releasePlayer()
         if (mediaFiles.isEmpty()) return
-
-        var prevIndex = currentIndex - 1
-        if (prevIndex < 0) prevIndex = mediaFiles.size - 1
-
-        currentIndex = prevIndex
+        currentIndex = if (currentIndex - 1 < 0) mediaFiles.size - 1 else currentIndex - 1
         showMedia(currentIndex)
     }
 
-
-    @androidx.annotation.OptIn(UnstableApi::class)
-    @OptIn(UnstableApi::class)
+    @UnstableApi
     private fun advanceOrNext() {
+        cancelSlideRunnable()
         val file = mediaFiles.getOrNull(currentIndex) ?: return
-        cancelSlideRunnable() // evitar animaciones simultáneas
-
         if (isVideo(file)) {
             nextMediaVideo()
         } else {
-            val hasNext = advanceToNextImage()
-            if (hasNext) showMedia(currentIndex)
-            else binding.txtFileName.text = "Última imagen"
+            if (advanceToNextImage()) {
+                showMedia(currentIndex)
+            } else {
+                binding.txtFileName.text = "Última imagen"
+            }
         }
     }
 
-
-    // Método auxiliar para ocultar bottomBar si está visible
     private fun hideBottomBarIfVisible() {
         if (binding.bottomBar.visibility == View.VISIBLE) {
             binding.bottomBar.visibility = View.GONE
@@ -546,31 +494,16 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun toggleBottomBar() {
         val bottomBarVisible = binding.bottomBar.visibility == View.VISIBLE
-        if (bottomBarVisible) {
-            binding.bottomBar.visibility = View.GONE
-            binding.photoViewContainer.requestFocus()
-        } else {
-            binding.bottomBar.visibility = View.VISIBLE
-            binding.btnPlayPause.requestFocus()
-        }
-    }
-
-    @androidx.annotation.OptIn(UnstableApi::class)
-    private fun previousMedia() {
-        cancelSlideRunnable()
-        releasePlayer()
-        if (mediaFiles.isEmpty()) return
-        currentIndex = if (currentIndex - 1 < 0) mediaFiles.size - 1 else currentIndex - 1
-        showMedia(currentIndex)
+        binding.bottomBar.visibility = if (bottomBarVisible) View.GONE else View.VISIBLE
+        if (bottomBarVisible) binding.photoViewContainer.requestFocus() else binding.btnPlayPause.requestFocus()
     }
 
     private fun isVideo(file: File): Boolean {
-        return file.extension.lowercase() in listOf("mp4","mkv","avi","mov","wmv","flv")
+        return file.extension.lowercase() in listOf("mp4", "mkv", "avi", "mov", "wmv", "flv")
     }
 
     override fun onStop() {
         super.onStop()
-        // liberar recursos cuando la activity no está visible -> reduce OOM en TV
         releasePlayer()
         cancelSlideRunnable()
     }
@@ -579,13 +512,10 @@ class ViewerActivity : AppCompatActivity() {
         super.onDestroy()
         try {
             unregisterReceiver(mediaUnmountReceiver)
-        } catch (e: Exception) { /* ignore */
-        }
-        releasePlayer()
-        cancelSlideRunnable()
+        } catch (e: Exception) { /* ignore */ }
+        finishSafely()
     }
 
-    // Formateo seguro de tiempo mostrado
     private fun formatTimeSafe(ms: Long): String {
         if (ms <= 0 || ms == Long.MIN_VALUE || ms == Long.MAX_VALUE) return "00:00"
         val totalSeconds = (ms / 1000).coerceAtLeast(0)
@@ -594,115 +524,45 @@ class ViewerActivity : AppCompatActivity() {
         return String.format("%02d:%02d", minutes, seconds)
     }
 
-    // --- Animaciones y efectos ligeros ---
-    enum class SlideEffect {
-        HORIZONTAL
-    }
-
-    // Animaciones optimizadas para TV: delta pequeño, duración proporcional
-    // Efecto único: movimiento horizontal suave
-    private fun applyEffectOptimized(photoView: PhotoView, effect: ViewerActivity.SlideEffect, duration: Long) {
-        try {
-            val interpolator = DecelerateInterpolator()
-
-            // Movimiento horizontal leve
-            val direction = if ((0..1).random() == 0) 1 else -1 // alterna dirección
-            val dx = 25f * direction
-
-            photoView.translationX = 0f
-            photoView.animate()
-                .translationX(dx)
-                .setDuration(duration)
-                .setInterpolator(interpolator)
-                .withEndAction {
-                    // regresa lentamente al centro
-                    photoView.animate()
-                        .translationX(0f)
-                        .setDuration(duration)
-                        .setInterpolator(interpolator)
-                        .start()
-                }
-                .start()
-
-        } catch (e: Exception) {
-            // proteger TVs de bajo rendimiento
-        }
-    }
-
-
     private var audioUris: List<Uri> = emptyList()
 
     private fun loadAudioFolder() {
         try {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val folderPath = prefs.getString(KEY_AUDIO_FOLDER, null)
-            if (folderPath.isNullOrEmpty()) {
-                audioUris = emptyList()
-                return
-            }
-
+            val folderPath = prefs.getString(KEY_AUDIO_FOLDER, null) ?: return
             val audioFolder = File(folderPath)
             if (!audioFolder.exists() || !audioFolder.isDirectory) {
-
                 audioUris = emptyList()
                 return
             }
-            val children = audioFolder.listFiles()
-            if (children == null) {
-                audioUris = emptyList()
-                return
-            }
-
-
-
-            audioUris = children
-                .filter { it.isFile && (it.extension.equals("mp3", true) || it.extension.equals("wav", true) || it.extension.equals("m4a", true)) }
-                .map { Uri.fromFile(it) }
-            if (audioUris.isEmpty()) {
-            } else {
-
-            }
-
+            audioUris = audioFolder.listFiles { file ->
+                file.isFile && file.extension.lowercase() in listOf("mp3", "wav", "m4a")
+            }?.map { Uri.fromFile(it) } ?: emptyList()
         } catch (e: Exception) {
-
             audioUris = emptyList()
         }
     }
 
     private fun playRandomAudioContinuously() {
         try {
-            if (audioUris.isEmpty()) {
-
-                Toast.makeText(this, "No hay audios para reproducir", Toast.LENGTH_SHORT).show()
-                return
-            }
-            // Detener audio anterior
+            if (audioUris.isEmpty()) return
             audioPlayer?.release()
-            audioPlayer = null
             val randomUri = audioUris.random()
-            Toast.makeText(this, "Reproduciendo: ${randomUri.lastPathSegment}", Toast.LENGTH_SHORT).show()
             audioPlayer = ExoPlayer.Builder(this).build().apply {
                 setMediaItem(MediaItem.fromUri(randomUri))
                 prepare()
                 play()
                 addListener(object : androidx.media3.common.Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
-
-                        if (state == ExoPlayer.STATE_ENDED) {
-                            if (slideRunning.get()) {
-                                playRandomAudioContinuously()
-                            }
+                        if (state == ExoPlayer.STATE_ENDED && slideRunning.get()) {
+                            playRandomAudioContinuously()
                         }
                     }
                 })
             }
-
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(this, "Error al reproducir audio", Toast.LENGTH_SHORT).show()
         }
     }
-
-
-
 }
