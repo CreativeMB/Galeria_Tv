@@ -182,7 +182,7 @@ class ViewerActivity : AppCompatActivity() {
         val file = mediaFiles[index]
 
         binding.photoViewContainer.removeAllViews()
-        releaseVideoPlayer() // Detiene solo el video si se estaba reproduciendo
+        releaseVideoPlayer()
         cancelSlideRunnable()
 
         binding.videoCenterIcon.visibility = View.GONE
@@ -235,10 +235,11 @@ class ViewerActivity : AppCompatActivity() {
                     .load(file)
                     .override(picMaxDim, picMaxDim)
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    // --- CAMBIO: No guardar en caché de memoria RAM ---
+                    .skipMemoryCache(true)
                     .thumbnail(0.15f)
                     .into(activeView)
 
-                // No iniciar slideshow automáticamente al mostrar, solo con botón de play
             } catch (e: Exception) {
                 Toast.makeText(this, "Error al mostrar imagen", Toast.LENGTH_SHORT).show()
             }
@@ -292,6 +293,8 @@ class ViewerActivity : AppCompatActivity() {
                     .load(nextFile)
                     .override(calculateTargetImageSize(), calculateTargetImageSize())
                     .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    // --- CAMBIO: No guardar en caché de memoria RAM ---
+                    .skipMemoryCache(true)
                     .thumbnail(0.15f)
                     .into(nextView)
 
@@ -312,6 +315,10 @@ class ViewerActivity : AppCompatActivity() {
                     .setInterpolator(DecelerateInterpolator())
                     .withEndAction {
                         activeView.visibility = View.GONE
+                        // --- CAMBIO CLAVE: Limpiar la vista que ya no se ve ---
+                        if (isActivityAlive()) {
+                            Glide.with(this@ViewerActivity).clear(activeView)
+                        }
                         isPhotoView1Active = !isPhotoView1Active
                     }
                     .start()
@@ -324,6 +331,12 @@ class ViewerActivity : AppCompatActivity() {
 
         handler.postDelayed(slideRunnable!!, intervalMs)
     }
+
+    // --- NUEVA FUNCIÓN: Para evitar crashes al limpiar la vista si la activity ya no existe ---
+    private fun isActivityAlive(): Boolean {
+        return !isFinishing && !isDestroyed
+    }
+
 
     private fun advanceToNextImage(): Boolean {
         var next = currentIndex + 1
@@ -388,7 +401,6 @@ class ViewerActivity : AppCompatActivity() {
         return Math.min(1080, Math.max(720, (screenShort * 0.8).toInt()))
     }
 
-    // --- CAMBIO: Nueva función para liberar solo el reproductor de video ---
     private fun releaseVideoPlayer() {
         try {
             playerView?.player = null
@@ -402,7 +414,6 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    // --- CAMBIO: releasePlayer ahora usa releaseVideoPlayer y además detiene el audio ---
     private fun releasePlayer() {
         releaseVideoPlayer()
         audioPlayer?.release()
@@ -416,8 +427,6 @@ class ViewerActivity : AppCompatActivity() {
         if (!isFinishing) finish()
     }
 
-
-    // --- CAMBIO: Lógica de KeyDown completamente reestructurada ---
     @UnstableApi
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
@@ -430,12 +439,10 @@ class ViewerActivity : AppCompatActivity() {
                 return true
             }
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                toggleBottomBarVisibility() // Nueva función para mostrar/ocultar la barra
+                toggleBottomBarVisibility()
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_CENTER -> {
-                // Si la barra está visible, el OK lo recibe el botón de play/pause.
-                // Si no, lo usamos para alternar la reproducción.
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (binding.bottomBar.visibility == View.VISIBLE) {
                     binding.btnPlayPause.callOnClick()
                 } else {
@@ -447,25 +454,20 @@ class ViewerActivity : AppCompatActivity() {
         }
     }
 
-    // --- CAMBIO: Esta función ahora solo muestra/oculta la barra de control ---
     private fun toggleBottomBarVisibility() {
         val isVisible = binding.bottomBar.visibility == View.VISIBLE
         binding.bottomBar.visibility = if (isVisible) View.GONE else View.VISIBLE
         if (isVisible) {
-            // Si se oculta, el foco debe ir a un contenedor principal para que no se pierda
             binding.photoViewContainer.requestFocus()
         } else {
-            // Si se muestra, el foco va al botón
             binding.btnPlayPause.requestFocus()
         }
     }
 
-
-    // --- CAMBIO: Estas funciones ahora usan releaseVideoPlayer para no detener el audio ---
     @UnstableApi
     private fun previousOrPrevious() {
         cancelSlideRunnable()
-        releaseVideoPlayer() // Solo detiene el video
+        releaseVideoPlayer()
         if (mediaFiles.isEmpty()) return
 
         var prevIndex = currentIndex - 1
@@ -478,7 +480,7 @@ class ViewerActivity : AppCompatActivity() {
     @UnstableApi
     private fun advanceOrNext() {
         cancelSlideRunnable()
-        releaseVideoPlayer() // Solo detiene el video
+        releaseVideoPlayer()
         if (mediaFiles.isEmpty()) return
 
         var nextIndex = currentIndex + 1
@@ -537,7 +539,6 @@ class ViewerActivity : AppCompatActivity() {
     private fun playRandomAudioContinuously() {
         try {
             if (audioUris.isEmpty()) return
-            // Si ya está sonando, no hacer nada
             if (audioPlayer?.isPlaying == true) return
 
             if (audioPlayer == null) {
@@ -551,7 +552,6 @@ class ViewerActivity : AppCompatActivity() {
                 })
             }
 
-            // Si está en pausa, reanudar. Si no, empezar de nuevo.
             if (audioPlayer?.playbackState == ExoPlayer.STATE_READY) {
                 audioPlayer?.play()
             } else {
